@@ -151,7 +151,7 @@ export function WooCommerceIntegration({ storeId }: WooCommerceIntegrationProps)
       <div>
         <h2 className="text-2xl font-bold mb-2">Intégration WooCommerce</h2>
         <p className="text-muted-foreground">
-          Connectez votre boutique WooCommerce pour activer le checkout externe HeyPay.
+          Connectez votre boutique WooCommerce pour activer le checkout externe PAYDAY.
         </p>
       </div>
 
@@ -214,7 +214,7 @@ export function WooCommerceIntegration({ storeId }: WooCommerceIntegrationProps)
                   Connectez-vous à WooCommerce
                 </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Vous serez redirigé vers votre site WordPress pour autoriser HeyPay à accéder à votre boutique.
+                  Vous serez redirigé vers votre site WordPress pour autoriser PAYDAY à accéder à votre boutique.
                 </p>
                 <Button
                   onClick={handleGenerateOAuth}
@@ -391,12 +391,12 @@ export function WooCommerceIntegration({ storeId }: WooCommerceIntegrationProps)
             <div className="pt-4 border-t border-border">
               <h4 className="font-semibold mb-2">Installation du plugin</h4>
               <p className="text-sm text-muted-foreground mb-3">
-                Téléchargez et installez le plugin HeyPay Checkout sur votre site WordPress pour activer le checkout externe.
+                Téléchargez et installez le plugin PAYDAY Checkout sur votre site WordPress pour activer le checkout externe.
               </p>
               <div className="space-y-2">
                 <Button variant="outline" className="w-full" asChild>
-                  <a href="/heypay-external-checkout.zip" download>
-                    Télécharger le plugin HeyPay Checkout
+                  <a href="/payday-external-checkout.zip" download>
+                    Télécharger le plugin PAYDAY Checkout
                   </a>
                 </Button>
                 <p className="text-xs text-muted-foreground text-center">
@@ -431,19 +431,19 @@ export function WooCommerceIntegration({ storeId }: WooCommerceIntegrationProps)
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold flex-shrink-0">
               1
             </span>
-            <p>Connectez votre boutique WooCommerce via OAuth pour permettre à HeyPay d&apos;accéder aux produits.</p>
+            <p>Connectez votre boutique WooCommerce via OAuth pour permettre à PAYDAY d&apos;accéder aux produits.</p>
           </div>
           <div className="flex gap-3">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold flex-shrink-0">
               2
             </span>
-            <p>Installez le plugin HeyPay Checkout sur votre site WordPress.</p>
+            <p>Installez le plugin PAYDAY Checkout sur votre site WordPress.</p>
           </div>
           <div className="flex gap-3">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold flex-shrink-0">
               3
             </span>
-            <p>Vos clients seront automatiquement redirigés vers le checkout HeyPay lors du paiement.</p>
+            <p>Vos clients seront automatiquement redirigés vers le checkout PAYDAY lors du paiement.</p>
           </div>
           <div className="flex gap-3">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold flex-shrink-0">

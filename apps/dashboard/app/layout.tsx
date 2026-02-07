@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HeyPay - Dashboard de paiement",
+  title: "PAYDAY - Dashboard de paiement",
   description: "Plateforme de gestion des paiements et des boutiques en ligne. Gérez vos transactions, configurez vos PSP et analysez vos performances commerciales.",
   robots: {
     index: false,
@@ -39,8 +39,6 @@ export const metadata: Metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({

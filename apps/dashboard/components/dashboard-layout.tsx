@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react'
 import Link from "next/link"
-import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -55,15 +54,41 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="glassmorphism-strong rounded-full px-6 py-3 glow-subtle">
           <div className="flex justify-between items-center">
             {/* Logo */}
-            <div className="flex items-center gap-3">
-                <Image 
-                  src="/contactless.png" 
-                  alt="HEYPAY Logo" 
-                  width={20}
-                  height={20}
-                  className="h-8 w-8"
-                />
-                <span className="text-lg font-extrabold text-foreground">HEYPAY</span>
+            <div className="flex items-center gap-2.5">
+                <svg width="34" height="34" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="PAYDAY Logo">
+                  <defs>
+                    <linearGradient id="logo-face" x1="4" y1="6" x2="36" y2="30" gradientUnits="userSpaceOnUse">
+                      <stop offset="0%" stopColor="#c084fc" />
+                      <stop offset="50%" stopColor="#a855f7" />
+                      <stop offset="100%" stopColor="#6366f1" />
+                    </linearGradient>
+                    <linearGradient id="logo-edge" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4f46e5" />
+                      <stop offset="100%" stopColor="#312e81" />
+                    </linearGradient>
+                    <linearGradient id="logo-chip" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#fde68a" />
+                      <stop offset="100%" stopColor="#f59e0b" />
+                    </linearGradient>
+                  </defs>
+                  {/* Shadow */}
+                  <ellipse cx="20" cy="36" rx="14" ry="2.5" fill="black" opacity="0.18" />
+                  {/* Card tilted for 3D */}
+                  <g transform="rotate(-5, 20, 20)">
+                    {/* Card edge (depth) */}
+                    <rect x="4" y="25" width="32" height="3.5" rx="1.5" fill="url(#logo-edge)" />
+                    {/* Card face */}
+                    <rect x="4" y="8" width="32" height="19" rx="3" fill="url(#logo-face)" />
+                    {/* Glossy shine */}
+                    <rect x="4" y="8" width="32" height="8" rx="3" fill="white" opacity="0.15" />
+                    {/* Gold chip */}
+                    <rect x="9" y="14" width="6" height="4.5" rx="1" fill="url(#logo-chip)" />
+                    {/* NFC contactless */}
+                    <path d="M27 14.5a3 3 0 0 1 0 5" stroke="white" strokeWidth="1.3" strokeLinecap="round" fill="none" opacity="0.6" />
+                    <path d="M29.5 12.5a5.5 5.5 0 0 1 0 9" stroke="white" strokeWidth="1.3" strokeLinecap="round" fill="none" opacity="0.35" />
+                  </g>
+                </svg>
+                <span className="text-lg font-extrabold text-foreground tracking-tight">PAYDAY</span>
             </div>
 
             {/* Navigation principale - cachée sur mobile */}

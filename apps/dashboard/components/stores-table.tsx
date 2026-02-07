@@ -92,9 +92,17 @@ const PLATFORM_TYPES: { value: StorePlatform; label: string; description: string
   // },
 ]
 
+// Validation de format de domaine
+const DOMAIN_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i
+function isValidDomain(domain: string): boolean {
+  if (!domain) return true // Vide = pas encore rempli, pas d'erreur
+  return DOMAIN_REGEX.test(domain)
+}
+
 // Interface pour les stores avec PSP count et cap total
 interface StoreWithPspCount extends Store {
   pspCount: number;
+  pspCountError?: boolean; // true si le chargement PSP a échoué
   totalCapEur: number; // Cap total en euros (somme des caps daily des PSPs)
   status: "active" | "inactive";
 }
@@ -260,6 +268,7 @@ export function StoresTable() {
               return {
                 ...store,
                 pspCount: 0,
+                pspCountError: true,
                 totalCapEur: 0,
                 status: "active" as const
               }
@@ -420,7 +429,7 @@ export function StoresTable() {
     if (currentStep === 1) {
       // Pour WooCommerce : name + domain
       // Pour Shopify : name + domain + shopifyId + clientId + clientSecret
-      const isValid = newStore.name && newStore.domain &&
+      const isValid = newStore.name && newStore.domain && isValidDomain(newStore.domain) &&
         (selectedPlatform === StorePlatform.WOOCOMMERCE || (newStore.shopifyId && newStore.clientId && newStore.clientSecret))
 
       if (isValid) {
@@ -565,7 +574,7 @@ export function StoresTable() {
     setEditStore(prev => ({
       ...prev,
       domain,
-      payDomain: domain ? `pay.${domain}` : ""
+      payDomain: domain ? `checkout.${domain}` : ""
     }))
   }
 
@@ -815,12 +824,17 @@ export function StoresTable() {
                     value={newStore.domain}
                     onChange={(e) => handleDomainChange(e.target.value)}
                     placeholder={selectedPlatform === StorePlatform.WOOCOMMERCE ? "maboutique.com" : "ma-boutique.com"}
+                    className={newStore.domain && !isValidDomain(newStore.domain) ? "border-red-500" : ""}
                   />
-                  {selectedPlatform === StorePlatform.WOOCOMMERCE && (
+                  {newStore.domain && !isValidDomain(newStore.domain) ? (
+                    <p className="text-xs text-red-500">
+                      Format invalide. Exemple : maboutique.com
+                    </p>
+                  ) : selectedPlatform === StorePlatform.WOOCOMMERCE ? (
                     <p className="text-xs text-muted-foreground">
                       Le domaine de votre site WordPress/WooCommerce
                     </p>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Champs spécifiques à Shopify */}
@@ -1030,7 +1044,13 @@ export function StoresTable() {
                   value={editStore.domain}
                   onChange={(e) => handleEditDomainChange(e.target.value)}
                   placeholder="ma-boutique.com"
+                  className={editStore.domain && !isValidDomain(editStore.domain) ? "border-red-500" : ""}
                 />
+                {editStore.domain && !isValidDomain(editStore.domain) && (
+                  <p className="text-xs text-red-500">
+                    Format invalide. Exemple : maboutique.com
+                  </p>
+                )}
               </div>
 
               {/* Champs spécifiques à Shopify */}
@@ -1312,9 +1332,9 @@ export function StoresTable() {
                   <TableCell>
                     <div className="flex flex-col gap-1">
                       <Badge
-                        variant={store.pspCount > 0 ? "default" : "secondary"}
+                        variant={store.pspCountError ? "destructive" : store.pspCount > 0 ? "default" : "secondary"}
                       >
-                        {store.pspCount} PSP{store.pspCount !== 1 ? 's' : ''}
+                        {store.pspCountError ? "- PSP" : `${store.pspCount} PSP${store.pspCount !== 1 ? 's' : ''}`}
                       </Badge>
                       {store.totalCapEur > 0 && (
                         <Tooltip>

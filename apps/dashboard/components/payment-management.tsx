@@ -663,7 +663,7 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
                             <span className="text-sm font-medium">Optimisation en cours</span>
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            HeyPay analyse continuellement les performances de vos PSP pour router intelligemment chaque transaction.
+                            PAYDAY analyse continuellement les performances de vos PSP pour router intelligemment chaque transaction.
                           </p>
                         </div>
                       </div>

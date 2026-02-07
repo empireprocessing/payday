@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HeyPay - Connexion",
-  description: "Connexion au dashboard HeyPay",
+  title: "PAYDAY - Connexion",
+  description: "Connexion au dashboard PAYDAY",
   robots: {
     index: false,
     follow: false,
@@ -39,8 +39,6 @@ export const metadata: Metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function LoginLayout({

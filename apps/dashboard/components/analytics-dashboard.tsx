@@ -167,55 +167,6 @@ export function AnalyticsDashboard() {
         const sortedTrends = [...trends].sort((a, b) => a.date.localeCompare(b.date))
         setTrendData(sortedTrends)
         
-        // Debug: vérifier les données d'approval rates
-        if (approvalRatesData) {
-          const approvalRatesWithData = approvalRatesData.approvalRates.filter(r => r.totalPayments > 0)
-          const totalFromDaily = approvalRatesWithData.reduce((sum, r) => sum + r.totalPayments, 0)
-          const successfulFromDaily = approvalRatesWithData.reduce((sum, r) => sum + r.successfulPayments, 0)
-          
-          console.log('[AnalyticsDashboard] Approval Rates reçus:', {
-            globalApprovalRate: approvalRatesData.globalApprovalRate,
-            totalFromDaily,
-            successfulFromDaily,
-            daysWithData: approvalRatesWithData.length,
-            approvalRatesWithData: approvalRatesWithData.map(r => ({
-              date: r.date,
-              totalPayments: r.totalPayments,
-              successfulPayments: r.successfulPayments,
-              approvalRate: r.approvalRate.toFixed(1) + '%'
-            }))
-          })
-        }
-        
-        // Vérification de cohérence : la somme des successfulAmount du graphique doit correspondre au totalRevenue
-        const sumFromGraph = sortedTrends.reduce((sum, day) => sum + day.successfulAmount, 0)
-        const daysWithData = sortedTrends.filter(d => d.successfulAmount > 0)
-        
-        console.log('[AnalyticsDashboard] Données reçues:', {
-          period: selectedPeriod,
-          days,
-          storeIds: selectedStoreIds,
-          totalRevenue: overview.totalRevenue,
-          sumFromGraph: sumFromGraph,
-          difference: overview.totalRevenue - sumFromGraph,
-          totalDays: sortedTrends.length,
-          daysWithData: daysWithData.length,
-          daysWithDataDetails: daysWithData.map(d => ({
-            date: d.date,
-            successfulAmount: d.successfulAmount,
-            successfulPayments: d.successfulPayments
-          }))
-        })
-        
-        if (Math.abs(sumFromGraph - overview.totalRevenue) > 1) { // Tolérance de 1 centime pour les arrondis
-          console.warn('⚠️ Incohérence détectée:', {
-            totalRevenue: overview.totalRevenue,
-            sumFromGraph: sumFromGraph,
-            difference: overview.totalRevenue - sumFromGraph,
-            days: sortedTrends.length,
-            daysWithData: daysWithData.length
-          })
-        }
       } catch (err) {
         if (err instanceof Error) {
           setError(err.message)
