@@ -1,7 +1,7 @@
 // Re-export des actions de l'API interne
-export { 
-  createPaymentIntent, 
-  confirmPayment, 
+export {
+  createPaymentIntent,
+  confirmPayment,
   handlePaymentSuccess,
   getOrderData,
   retryPayment,
@@ -11,6 +11,8 @@ export {
   getStoreByPayDomain,
   getStoreById,
   getShopifyCart,
+  createPaymentBT,
+  confirmPaymentBT,
 } from './internal-api-actions'
 
 // Import et re-export des types depuis le fichier types

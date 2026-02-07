@@ -333,6 +333,69 @@ export async function getPublishableKey(checkoutId: string): Promise<{ success: 
   }
 }
 
+// ── Basis Theory + Connect Actions ──────────────────────────────────
+
+export async function createPaymentBT(
+  checkoutId: string,
+  tokenIntentId: string,
+  customerData?: {
+    email?: string
+    name?: string
+    phone?: string
+    address?: {
+      line1?: string
+      line2?: string
+      city?: string
+      postal_code?: string
+      country?: string
+      state?: string
+    }
+  }
+): Promise<PaymentIntentResponse> {
+  try {
+    return await apiRequest('/payment/from-checkout-bt', {
+      method: 'POST',
+      body: JSON.stringify({ checkoutId, tokenIntentId, customerData }),
+    })
+  } catch (error) {
+    console.error('Erreur lors de la création du paiement BT:', error)
+    return {
+      success: false,
+      error: 'Impossible de créer le paiement',
+    }
+  }
+}
+
+export async function confirmPaymentBT(
+  paymentIntentId: string,
+  customerData?: {
+    email?: string
+    name?: string
+    phone?: string
+    address?: {
+      line1?: string
+      line2?: string
+      city?: string
+      postal_code?: string
+      country?: string
+      state?: string
+    }
+  }
+): Promise<PaymentIntentResponse> {
+  try {
+    return await apiRequest('/payment/confirm-bt', {
+      method: 'POST',
+      body: JSON.stringify({ paymentIntentId, customerData }),
+    })
+  } catch (error) {
+    console.error('Erreur lors de la confirmation du paiement BT:', error)
+    return {
+      success: false,
+      error: 'Erreur lors de la confirmation du paiement',
+    }
+  }
+}
+
 export async function getOrCreatePaymentIntent(checkoutId: string): Promise<PaymentIntentResponse> {
   try {
     return await apiRequest(`/payment/checkout/${checkoutId}/payment-intent`)

@@ -79,6 +79,10 @@ export interface PaymentIntentResponse {
   }
   error?: string
   cartLimitExceeded?: CartLimitExceeded
+  // BT + Connect fields
+  status?: string // 'succeeded' | 'requires_action'
+  platformPublishableKey?: string // For 3DS handleNextAction
+  stripeConnectedAccountId?: string // For 3DS handleNextAction
 }
 
 export interface CheckoutInfo {

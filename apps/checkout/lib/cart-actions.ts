@@ -6,7 +6,8 @@ import {
   createPaymentFromCart as createPaymentFromCartInternal,
   getCheckoutInfo as getCheckoutInfoInternal,
   getOrCreatePaymentIntent as getOrCreatePaymentIntentInternal,
-  getPublishableKey as getPublishableKeyInternal,
+  createPaymentBT as createPaymentBTInternal,
+  confirmPaymentBT as confirmPaymentBTInternal,
 } from './internal-api-actions'
 
 // Import des types depuis le fichier types
@@ -77,10 +78,6 @@ export async function createPaymentFromCart(
   return createPaymentFromCartInternal(checkoutId, customerData, referer, isExpressCheckout)
 }
 
-export async function getPublishableKey(checkoutId: string): Promise<{ success: boolean; publishableKey?: string; error?: string }> {
-  return getPublishableKeyInternal(checkoutId)
-}
-
 export async function getOrCreatePaymentIntent(checkoutId: string): Promise<PaymentConfig> {
   return getOrCreatePaymentIntentInternal(checkoutId)
 }
@@ -88,4 +85,44 @@ export async function getOrCreatePaymentIntent(checkoutId: string): Promise<Paym
 // Fonction pour récupérer les informations de checkout (store + cart)
 export async function getCheckoutInfo(checkoutId: string, domain?: string): Promise<CheckoutInfo> {
   return getCheckoutInfoInternal(checkoutId, domain)
+}
+
+// Basis Theory + Connect actions
+export async function createPaymentBT(
+  checkoutId: string,
+  tokenIntentId: string,
+  customerData?: {
+    email?: string
+    name?: string
+    phone?: string
+    address?: {
+      line1?: string
+      line2?: string
+      city?: string
+      postal_code?: string
+      country?: string
+      state?: string
+    }
+  }
+): Promise<PaymentIntentResponse> {
+  return createPaymentBTInternal(checkoutId, tokenIntentId, customerData)
+}
+
+export async function confirmPaymentBT(
+  paymentIntentId: string,
+  customerData?: {
+    email?: string
+    name?: string
+    phone?: string
+    address?: {
+      line1?: string
+      line2?: string
+      city?: string
+      postal_code?: string
+      country?: string
+      state?: string
+    }
+  }
+): Promise<PaymentIntentResponse> {
+  return confirmPaymentBTInternal(paymentIntentId, customerData)
 }
