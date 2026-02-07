@@ -120,6 +120,66 @@ export class PaymentController {
   }
 
   /**
+   * Créer un paiement via Basis Theory + Stripe Connect
+   * POST /payment/from-checkout-bt
+   */
+  @Post('from-checkout-bt')
+  async createPaymentFromCheckoutBT(
+    @Body() body: {
+      checkoutId: string;
+      tokenIntentId: string;
+      customerData?: {
+        email?: string;
+        name?: string;
+        phone?: string;
+        address?: {
+          line1?: string;
+          line2?: string;
+          city?: string;
+          postal_code?: string;
+          country?: string;
+          state?: string;
+        };
+      };
+    }
+  ) {
+    return await this.paymentService.createPaymentFromCheckoutBT(
+      body.checkoutId,
+      body.tokenIntentId,
+      body.customerData
+    )
+  }
+
+  /**
+   * Confirmer un paiement BT après 3DS
+   * POST /payment/confirm-bt
+   */
+  @Post('confirm-bt')
+  async confirmPaymentBT(
+    @Body() body: {
+      paymentIntentId: string;
+      customerData?: {
+        email?: string;
+        name?: string;
+        phone?: string;
+        address?: {
+          line1?: string;
+          line2?: string;
+          city?: string;
+          postal_code?: string;
+          country?: string;
+          state?: string;
+        };
+      };
+    }
+  ) {
+    return await this.paymentService.confirmPaymentBT(
+      body.paymentIntentId,
+      body.customerData
+    )
+  }
+
+  /**
    * Préparer le paiement WooCommerce - Sélectionne le meilleur PSP disponible
    * POST /payment/woocommerce/prepare
    */

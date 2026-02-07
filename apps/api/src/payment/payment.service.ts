@@ -4,6 +4,7 @@ import { PspService } from '../psp/psp.service'
 import { OrderService } from '../order/order.service'
 import { StoreService } from '../store/store.service'
 import { MetaService } from '../meta/meta.service'
+import { BasisTheoryService } from '../basis-theory/basis-theory.service'
 
 import { ShopifyService, ShopifyOrderData } from '../shopify/shopify.service'
 import { WoocommerceService } from '../woocommerce/woocommerce.service'
@@ -51,6 +52,7 @@ export class PaymentService {
     private shopifyService: ShopifyService,
     private woocommerceService: WoocommerceService,
     private metaService: MetaService,
+    private basisTheoryService: BasisTheoryService,
   ) {}
 
   /**
@@ -353,8 +355,23 @@ export class PaymentService {
     // Sinon, vérifier avec l'API Stripe
     try {
       console.log(`🔍 Checking Stripe account status for ${psp.name}...`)
-      const stripe = this.createStripeInstance(psp.secretKey)
-      const account = await stripe.accounts.retrieve()
+
+      // Stripe Connect: utiliser la clé plateforme + retrieve du connected account
+      const connectedAccountId = (psp as any).stripeConnectedAccountId
+      let account: any
+
+      if (connectedAccountId) {
+        const platformKey = process.env.STRIPE_PLATFORM_SECRET_KEY
+        if (!platformKey) {
+          throw new Error('STRIPE_PLATFORM_SECRET_KEY not configured')
+        }
+        const stripe = new Stripe(platformKey, { typescript: true })
+        account = await stripe.accounts.retrieve(connectedAccountId)
+      } else {
+        // Fallback: ancienne logique avec la clé du PSP directement
+        const stripe = this.createStripeInstance(psp.secretKey)
+        account = await stripe.accounts.retrieve()
+      }
 
       const chargesEnabled = account.charges_enabled ?? false
       const payoutsEnabled = account.payouts_enabled ?? false
@@ -614,6 +631,7 @@ export class PaymentService {
     pspPaymentId?: string | null
     pspIntentId?: string | null
     clientSecret?: string | null
+    btTokenIntentId?: string | null
     amount: number
     currency: string
     status: PaymentStatus
@@ -1778,6 +1796,701 @@ export class PaymentService {
       console.error('Erreur lors de la création du Payment Intent depuis le checkout:', error)
       return { success: false, error: `Erreur: ${error.message || 'Impossible de créer le paiement depuis le checkout'}` }
     }
+  }
+
+  /**
+   * Créer un paiement depuis un checkout via Basis Theory + Stripe Connect (Direct Charges)
+   * Le tokenIntentId BT est réutilisé pour les retries multi-PSP sans réinitialiser le frontend
+   */
+  async createPaymentFromCheckoutBT(
+    checkoutId: string,
+    tokenIntentId: string,
+    customerData?: {
+      email?: string;
+      name?: string;
+      phone?: string;
+      address?: {
+        line1?: string;
+        line2?: string;
+        city?: string;
+        postal_code?: string;
+        country?: string;
+        state?: string;
+      };
+    }
+  ): Promise<PaymentIntentResponse> {
+    try {
+      // 1. Récupérer le checkout
+      const checkout = await this.prisma.checkout.findUnique({
+        where: { id: checkoutId },
+        include: { store: true },
+      })
+
+      if (!checkout) {
+        throw new Error('Checkout non trouvé')
+      }
+
+      if (checkout.expiresAt < new Date()) {
+        await this.prisma.checkout.update({
+          where: { id: checkoutId },
+          data: { status: 'EXPIRED' },
+        })
+        throw new Error('Checkout expiré')
+      }
+
+      // Vérifier la limite d'échecs consécutifs
+      const hasReachedLimit = await this.hasReachedMaxConsecutiveFailures(checkoutId)
+      if (hasReachedLimit) {
+        console.log(`🚫 Limite de 2 échecs consécutifs atteinte pour le checkout ${checkoutId}`)
+        return {
+          success: false,
+          error: 'Trop de tentatives de paiement échouées. Veuillez contacter le support.',
+        }
+      }
+
+      // 2. Extraire les données du panier
+      const cartData = checkout.cartData as any
+      const totalAmountCents = Math.round(cartData.totalAmount * 100)
+
+      console.log(`🏪 Store: ${checkout.store.name} (${checkout.store.domain}) - Montant: ${cartData.totalAmount} ${cartData.currency}`)
+
+      // 3. Vérifier la limite de 100€
+      const MAX_CART_AMOUNT = 100
+      if (cartData.totalAmount > MAX_CART_AMOUNT) {
+        console.log(`⚠️ Panier trop élevé: ${cartData.totalAmount}€ > ${MAX_CART_AMOUNT}€`)
+        const items = cartData.items as Array<{ id: string; name: string; quantity: number; unitPrice: number; totalPrice: number }>
+        const suggestions = this.calculateItemsToRemove(items, cartData.totalAmount, MAX_CART_AMOUNT)
+        if (suggestions.possible) {
+          return {
+            success: false,
+            error: 'CART_AMOUNT_EXCEEDED',
+            cartLimitExceeded: {
+              currentAmount: cartData.totalAmount,
+              maxAmount: MAX_CART_AMOUNT,
+              currency: cartData.currency,
+              suggestions: suggestions.itemsToRemove,
+              newTotalAfterRemoval: suggestions.newTotal
+            }
+          }
+        } else {
+          return {
+            success: false,
+            error: 'CART_AMOUNT_EXCEEDED',
+            cartLimitExceeded: {
+              currentAmount: cartData.totalAmount,
+              maxAmount: MAX_CART_AMOUNT,
+              currency: cartData.currency,
+              suggestions: null,
+              message: 'Le montant du panier dépasse la limite autorisée et aucun ajustement n\'est possible.'
+            }
+          }
+        }
+      }
+
+      // Persister le tokenIntentId sur le checkout pour les retries
+      await this.prisma.checkout.update({
+        where: { id: checkoutId },
+        data: { btTokenIntentId: tokenIntentId },
+      })
+
+      // 4. Routing + cascade
+      const config = await this.getRoutingConfigOrDefault(checkout.storeId)
+      const attempted: string[] = []
+      const maxAttempts = config.mode === RoutingMode.AUTOMATIC
+        ? 1
+        : (1 + (config.fallbackEnabled ? config.maxRetries : 0))
+
+      let attemptNumber = 1
+
+      const platformSecretKey = process.env.STRIPE_PLATFORM_SECRET_KEY
+      if (!platformSecretKey) {
+        throw new Error('STRIPE_PLATFORM_SECRET_KEY not configured')
+      }
+
+      while (attemptNumber <= maxAttempts) {
+        const selectedPSP = await this.selectNextPsp(checkout.storeId, totalAmountCents, cartData.currency || 'EUR', attempted, checkoutId)
+        if (!selectedPSP) break
+        const start = Date.now()
+
+        // Vérifier que le PSP a un stripeConnectedAccountId
+        const connectedAccountId = (selectedPSP.psp as any).stripeConnectedAccountId
+        if (!connectedAccountId) {
+          console.log(`⚠️ PSP ${selectedPSP.psp.name} n'a pas de stripeConnectedAccountId, skip`)
+          attempted.push(selectedPSP.psp.id)
+          attemptNumber += 1
+          continue
+        }
+
+        console.log(`💳 PSP sélectionné: ${selectedPSP.psp.name} → Connected account ${connectedAccountId} - Tentative ${attemptNumber}/${maxAttempts}`)
+
+        try {
+          // Créer un Customer sur le connected account (pour Radar)
+          let customerId: string | undefined
+          if (customerData?.email) {
+            customerId = await this.basisTheoryService.createCustomerOnConnectedAccount({
+              stripeSecretKey: platformSecretKey,
+              stripeConnectedAccountId: connectedAccountId,
+              email: customerData.email,
+              name: customerData.name,
+              phone: customerData.phone,
+              address: customerData.address,
+            })
+            console.log(`👤 Customer créé sur connected account: ${customerId}`)
+          }
+
+          // Préparer les données de shipping
+          const shippingData = customerData?.address?.line1 ? {
+            name: customerData.name || 'N/A',
+            address: {
+              line1: customerData.address.line1,
+              line2: customerData.address.line2,
+              city: customerData.address.city,
+              state: customerData.address.state,
+              postal_code: customerData.address.postal_code,
+              country: customerData.address.country,
+            }
+          } : undefined
+
+          // Charger la carte via BT Proxy → Stripe Connected Account
+          const btResult = await this.basisTheoryService.chargeCard({
+            tokenIntentId,
+            amount: totalAmountCents,
+            currency: cartData.currency?.toLowerCase() || 'eur',
+            stripeSecretKey: platformSecretKey,
+            stripeConnectedAccountId: connectedAccountId,
+            customerId,
+            description: `Checkout ${checkoutId}`,
+            metadata: {
+              checkout_id: checkoutId,
+              store_id: checkout.storeId,
+            },
+            shippingData,
+          })
+
+          if (btResult.success && btResult.status === 'succeeded') {
+            // Paiement réussi immédiatement
+            await this.recordAttemptRow({
+              orderId: null,
+              checkoutId,
+              storeId: checkout.storeId,
+              pspId: selectedPSP.psp.id,
+              pspIntentId: btResult.paymentIntentId || null,
+              clientSecret: btResult.clientSecret || null,
+              btTokenIntentId: tokenIntentId,
+              amount: totalAmountCents,
+              currency: cartData.currency.toUpperCase(),
+              status: PaymentStatus.SUCCESS,
+              pspMetadata: {
+                checkoutId,
+                storeDomain: checkout.store.domain,
+                pspType: selectedPSP.psp.pspType,
+                storeId: checkout.storeId,
+                customerId,
+                cartData,
+                connectedAccountId,
+                networkTransactionId: btResult.networkTransactionId,
+              },
+              attemptNumber,
+              isFallback: attemptNumber > 1,
+              processingTimeMs: Date.now() - start,
+            })
+
+            // Enregistrer événement checkout
+            await this.recordCheckoutEvent(checkoutId, 'PAYMENT_SUCCESSFUL')
+
+            // Créer l'ordre immédiatement
+            const orderData = await this.createOrderFromCheckoutData(
+              checkout, cartData, customerData, btResult.paymentIntentId!
+            )
+
+            // Envoyer événement InitiateCheckout + Purchase à Meta (non bloquant)
+            this.sendMetaInitiateCheckout(checkout.storeId, cartData).catch(() => {})
+
+            console.log(`✅ Payment BT succeeded via ${selectedPSP.psp.name}: ${btResult.paymentIntentId}`)
+
+            return {
+              success: true,
+              paymentIntentId: btResult.paymentIntentId,
+              status: 'succeeded',
+              order: orderData,
+            }
+          }
+
+          if (btResult.success && btResult.status === 'requires_action') {
+            // 3DS requis - enregistrer et retourner au frontend
+            await this.recordAttemptRow({
+              orderId: null,
+              checkoutId,
+              storeId: checkout.storeId,
+              pspId: selectedPSP.psp.id,
+              pspIntentId: btResult.paymentIntentId || null,
+              clientSecret: btResult.clientSecret || null,
+              btTokenIntentId: tokenIntentId,
+              amount: totalAmountCents,
+              currency: cartData.currency.toUpperCase(),
+              status: PaymentStatus.PROCESSING,
+              pspMetadata: {
+                checkoutId,
+                storeDomain: checkout.store.domain,
+                pspType: selectedPSP.psp.pspType,
+                storeId: checkout.storeId,
+                customerId,
+                cartData,
+                connectedAccountId,
+              },
+              attemptNumber,
+              isFallback: attemptNumber > 1,
+              processingTimeMs: Date.now() - start,
+            })
+
+            console.log(`🔐 Payment requires 3DS via ${selectedPSP.psp.name}: ${btResult.paymentIntentId}`)
+
+            return {
+              success: true,
+              paymentIntentId: btResult.paymentIntentId,
+              clientSecret: btResult.clientSecret,
+              status: 'requires_action',
+              platformPublishableKey: process.env.STRIPE_PLATFORM_PUBLISHABLE_KEY,
+              stripeConnectedAccountId: connectedAccountId,
+            }
+          }
+
+          // Échec - enregistrer et tenter le PSP suivant
+          console.log(`❌ Échec PSP ${selectedPSP.psp.name}: ${btResult.error} (code: ${btResult.stripeErrorCode})`)
+          await this.recordAttemptRow({
+            orderId: null,
+            checkoutId,
+            storeId: checkout.storeId,
+            pspId: selectedPSP.psp.id,
+            pspIntentId: btResult.paymentIntentId || null,
+            btTokenIntentId: tokenIntentId,
+            amount: totalAmountCents,
+            currency: cartData.currency.toUpperCase(),
+            status: PaymentStatus.FAILED,
+            pspMetadata: {
+              checkoutId,
+              storeDomain: checkout.store.domain,
+              storeId: checkout.storeId,
+              connectedAccountId,
+              stripeErrorCode: btResult.stripeErrorCode,
+            },
+            failureReason: btResult.error || 'payment_failed',
+            attemptNumber,
+            isFallback: attemptNumber > 1,
+            processingTimeMs: Date.now() - start,
+          })
+          attempted.push(selectedPSP.psp.id)
+          attemptNumber += 1
+          continue
+
+        } catch (e) {
+          console.log(`❌ Erreur PSP ${selectedPSP.psp.name}: ${(e as any)?.message || 'Erreur inconnue'}`)
+          await this.recordAttemptRow({
+            orderId: null,
+            checkoutId,
+            storeId: checkout.storeId,
+            pspId: selectedPSP.psp.id,
+            btTokenIntentId: tokenIntentId,
+            amount: totalAmountCents,
+            currency: cartData.currency.toUpperCase(),
+            status: PaymentStatus.FAILED,
+            pspMetadata: { checkoutId, storeDomain: checkout.store.domain, storeId: checkout.storeId },
+            failureReason: (e as any)?.message || 'creation_failed',
+            attemptNumber,
+            isFallback: attemptNumber > 1,
+            processingTimeMs: Date.now() - start,
+          })
+          attempted.push(selectedPSP.psp.id)
+          attemptNumber += 1
+          continue
+        }
+      }
+
+      return { success: false, error: 'Impossible de créer le paiement (tous les PSP ont échoué)' }
+    } catch (error) {
+      console.error('Erreur lors de createPaymentFromCheckoutBT:', error)
+      return { success: false, error: `Erreur: ${error.message || 'Impossible de créer le paiement'}` }
+    }
+  }
+
+  /**
+   * Confirmer un paiement BT après 3DS (handleNextAction côté frontend)
+   */
+  async confirmPaymentBT(
+    paymentIntentId: string,
+    customerData?: {
+      email?: string;
+      name?: string;
+      phone?: string;
+      address?: {
+        line1?: string;
+        line2?: string;
+        city?: string;
+        postal_code?: string;
+        country?: string;
+        state?: string;
+      };
+    }
+  ): Promise<PaymentIntentResponse> {
+    try {
+      // 1. Récupérer le payment record
+      const paymentRecord = await this.prisma.payment.findFirst({
+        where: { pspIntentId: paymentIntentId },
+        include: {
+          psp: true,
+          checkout: {
+            include: { store: true },
+          },
+        },
+      })
+
+      if (!paymentRecord) {
+        throw new Error('Enregistrement de paiement non trouvé')
+      }
+
+      if (!paymentRecord.psp) {
+        throw new Error('PSP non trouvé pour ce paiement')
+      }
+
+      // 2. Récupérer le connected account ID
+      const connectedAccountId = paymentRecord.psp.stripeConnectedAccountId
+      if (!connectedAccountId) {
+        throw new Error('Connected account ID non trouvé pour ce PSP')
+      }
+
+      const platformSecretKey = process.env.STRIPE_PLATFORM_SECRET_KEY
+      if (!platformSecretKey) {
+        throw new Error('STRIPE_PLATFORM_SECRET_KEY not configured')
+      }
+
+      // 3. Vérifier le statut du PaymentIntent via Stripe SDK (avec connected account)
+      const stripe = new Stripe(platformSecretKey, { typescript: true })
+      const paymentIntent = await stripe.paymentIntents.retrieve(
+        paymentIntentId,
+        { expand: ['latest_charge'] },
+        { stripeAccount: connectedAccountId }
+      )
+
+      if (paymentIntent.status === 'succeeded') {
+        // 4. Paiement confirmé - créer l'ordre
+        await this.prisma.payment.update({
+          where: { id: paymentRecord.id },
+          data: { status: PaymentStatus.SUCCESS },
+        })
+
+        await this.recordCheckoutEvent(paymentRecord.checkoutId || '', 'PAYMENT_SUCCESSFUL')
+
+        const checkout = paymentRecord.checkout
+        if (!checkout) {
+          throw new Error('Checkout non trouvé pour ce paiement')
+        }
+
+        const cartData = checkout.cartData as any
+        const orderData = await this.createOrderFromCheckoutData(
+          checkout, cartData, customerData, paymentIntentId
+        )
+
+        console.log(`✅ Payment BT confirmé après 3DS: ${paymentIntentId}`)
+
+        return {
+          success: true,
+          paymentIntentId,
+          status: 'succeeded',
+          order: orderData,
+        }
+      }
+
+      // Paiement échoué après 3DS
+      const failedStatuses = ['canceled', 'requires_payment_method']
+      if (failedStatuses.includes(paymentIntent.status)) {
+        console.log(`❌ Paiement échoué après 3DS (${paymentIntent.status}):`, paymentIntentId)
+        await this.prisma.payment.update({
+          where: { id: paymentRecord.id },
+          data: {
+            status: PaymentStatus.FAILED,
+            failureReason: paymentIntent.last_payment_error?.message || paymentIntent.status,
+          },
+        })
+        return {
+          success: false,
+          error: paymentIntent.last_payment_error?.message || 'Le paiement a échoué',
+        }
+      }
+
+      return {
+        success: false,
+        error: `Statut inattendu: ${paymentIntent.status}`,
+      }
+    } catch (error) {
+      console.error('Erreur lors de confirmPaymentBT:', error)
+      return {
+        success: false,
+        error: error.message || 'Erreur lors de la confirmation du paiement',
+      }
+    }
+  }
+
+  /**
+   * Helper: Crée un ordre à partir des données du checkout après un paiement réussi
+   * Réutilisé par createPaymentFromCheckoutBT (succès immédiat) et confirmPaymentBT (après 3DS)
+   */
+  private async createOrderFromCheckoutData(
+    checkout: any,
+    cartData: any,
+    customerData: { email?: string; name?: string; phone?: string; address?: any } | undefined,
+    paymentIntentId: string,
+  ) {
+    const storeId = checkout.storeId
+    const store = checkout.store
+
+    // Créer l'ordre en DB
+    const order = await this.orderService.createOrder({
+      storeId,
+      customerEmail: customerData?.email || 'customer@example.com',
+      subtotal: Math.round(cartData.subtotal * 100),
+      shippingCost: Math.round(cartData.shippingCost * 100),
+      totalAmount: Math.round(cartData.totalAmount * 100),
+      currency: (cartData.currency || 'EUR').toUpperCase(),
+      items: cartData.items?.map((item: any) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: Math.round(item.unitPrice * 100),
+        name: item.name,
+        description: item.description || '',
+        image: item.image || null,
+      })) || [],
+    })
+
+    // Mettre à jour l'ordre avec les données client
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: {
+        status: 'CONFIRMED',
+        paymentStatus: 'SUCCESS',
+        ...(customerData?.email ? {
+          customerEmail: customerData.email,
+          metadata: {
+            customerName: customerData.name,
+            customerPhone: customerData.phone,
+            shippingAddress: customerData.address,
+            billingAddress: customerData.address,
+          },
+        } : {}),
+      },
+    })
+
+    // Mettre à jour le checkout
+    await this.prisma.checkout.update({
+      where: { id: checkout.id },
+      data: { status: 'COMPLETED' },
+    })
+
+    // Mettre à jour le payment record avec l'orderId
+    await this.prisma.payment.updateMany({
+      where: { pspIntentId: paymentIntentId },
+      data: { orderId: order.id },
+    })
+
+    // Créer l'ordre sur la plateforme (Shopify/WooCommerce) - non bloquant
+    if (customerData?.email) {
+      this.createPlatformOrder(store, checkout, customerData, paymentIntentId, order.id).catch((err) => {
+        console.error('⚠️ Erreur plateforme (non bloquant):', err)
+      })
+    }
+
+    // Envoyer l'événement Purchase à Meta (non bloquant)
+    if (customerData?.email) {
+      this.sendMetaPurchaseEvent(storeId, order, cartData, customerData).catch(() => {})
+    }
+
+    // Récupérer l'ordre complet pour le retour
+    const completeOrder = await this.prisma.order.findUnique({
+      where: { id: order.id },
+      include: { items: true, store: true },
+    })
+
+    if (!completeOrder) {
+      throw new Error('Impossible de récupérer l\'ordre complet après création')
+    }
+
+    return {
+      id: completeOrder.id,
+      confirmationNumber: completeOrder.id.slice(-8).toUpperCase(),
+      customerEmail: customerData?.email || completeOrder.customerEmail,
+      shippingAddress: {
+        name: customerData?.name || 'Client',
+        address: customerData?.address?.line1 || 'Adresse non fournie',
+        line2: customerData?.address?.line2 || '',
+        city: customerData?.address?.city || 'Ville non fournie',
+        postalCode: customerData?.address?.postal_code || '',
+        country: customerData?.address?.country || 'Pays non fourni',
+      },
+      billingAddress: {
+        name: customerData?.name || 'Client',
+        address: customerData?.address?.line1 || 'Adresse non fournie',
+        line2: customerData?.address?.line2 || '',
+        city: customerData?.address?.city || 'Ville non fournie',
+        postalCode: customerData?.address?.postal_code || '',
+        country: customerData?.address?.country || 'Pays non fourni',
+      },
+      shippingMethod: 'Colissimo Express',
+      items: completeOrder.items.map(item => ({
+        id: item.id,
+        name: item.name,
+        description: item.description || '',
+        quantity: item.quantity,
+        price: item.unitPrice / 100,
+        image: item.image,
+      })),
+      pricing: {
+        subtotal: completeOrder.subtotal / 100,
+        shipping: completeOrder.shippingCost / 100,
+        total: completeOrder.totalAmount / 100,
+        currency: completeOrder.currency.toUpperCase(),
+      },
+      store: {
+        name: completeOrder.store.name,
+        domain: completeOrder.store.domain,
+        supportEmail: completeOrder.store.supportEmail,
+        requiresShipping: completeOrder.store.requiresShipping,
+        platform: completeOrder.store.platform,
+      },
+      paymentStatus: completeOrder.paymentStatus,
+      createdAt: completeOrder.createdAt,
+    }
+  }
+
+  /**
+   * Helper: Crée l'ordre sur la plateforme (Shopify/WooCommerce)
+   */
+  private async createPlatformOrder(
+    store: any,
+    checkout: any,
+    customerData: { email?: string; name?: string; phone?: string; address?: any },
+    paymentIntentId: string,
+    orderId: string,
+  ) {
+    if (store.platform === 'SHOPIFY') {
+      const shopifyId = getShopifyId(store)
+      const shopifyAccessToken = getShopifyAccessToken(store)
+      if (shopifyId && shopifyAccessToken) {
+        const shopifyOrderData: ShopifyOrderData = {
+          email: customerData.email!,
+          name: customerData.name || 'Customer',
+          phone: customerData.phone,
+          address: {
+            line1: customerData.address?.line1 || '',
+            line2: customerData.address?.line2,
+            city: customerData.address?.city || '',
+            postal_code: customerData.address?.postal_code || '',
+            country: customerData.address?.country || 'FR',
+            state: customerData.address?.state || '',
+          },
+          cartId: checkout.cartId,
+          paymentIntentId,
+          paymentMethod: 'card',
+        }
+        const shopDomain = `${shopifyId}.myshopify.com`
+        const shopifyOrder = await this.shopifyService.createPaidOrder(shopifyOrderData, {
+          shopDomain,
+          accessToken: shopifyAccessToken,
+        })
+        console.log('✅ Ordre Shopify créée:', shopifyOrder.id, shopifyOrder.name)
+      }
+    } else if (store.platform === 'WOOCOMMERCE') {
+      const credentials = await this.woocommerceService.getStoreCredentials(store.id)
+      if (credentials) {
+        const cartData = checkout.cartData as any
+        const lineItems = cartData.items?.map((item: any) => ({
+          product_id: parseInt(item.productId),
+          variation_id: item.variantId && item.variantId !== item.productId ? parseInt(item.variantId) : 0,
+          quantity: item.quantity,
+        })) || []
+
+        const wooOrderData = {
+          payment_method: 'heypay',
+          payment_method_title: 'HeyPay',
+          set_paid: true,
+          billing: {
+            first_name: customerData.name?.split(' ')[0] || 'Customer',
+            last_name: customerData.name?.split(' ').slice(1).join(' ') || '',
+            address_1: customerData.address?.line1 || '',
+            address_2: customerData.address?.line2 || '',
+            city: customerData.address?.city || '',
+            state: customerData.address?.state || '',
+            postcode: customerData.address?.postal_code || '',
+            country: customerData.address?.country || 'FR',
+            email: customerData.email,
+            phone: customerData.phone || '',
+          },
+          shipping: {
+            first_name: customerData.name?.split(' ')[0] || 'Customer',
+            last_name: customerData.name?.split(' ').slice(1).join(' ') || '',
+            address_1: customerData.address?.line1 || '',
+            address_2: customerData.address?.line2 || '',
+            city: customerData.address?.city || '',
+            state: customerData.address?.state || '',
+            postcode: customerData.address?.postal_code || '',
+            country: customerData.address?.country || 'FR',
+          },
+          line_items: lineItems,
+          meta_data: [
+            { key: '_heypay_payment_id', value: paymentIntentId },
+            { key: '_heypay_order_id', value: orderId },
+          ],
+        }
+        const wooOrder = await this.woocommerceService.createOrder(wooOrderData, credentials)
+        console.log('✅ Ordre WooCommerce créée:', wooOrder.id)
+      }
+    }
+  }
+
+  /**
+   * Helper: Envoie l'événement Purchase à Meta Conversion API
+   */
+  private async sendMetaPurchaseEvent(
+    storeId: string,
+    order: any,
+    cartData: any,
+    customerData: { email?: string; name?: string; phone?: string; address?: any },
+  ) {
+    const metaCredentials = await this.storeService.getMetaCredentials(storeId)
+    if (!metaCredentials) return
+
+    let shouldSendEvent = true
+    if (metaCredentials.newCustomersOnly && customerData.email) {
+      shouldSendEvent = await this.metaService.isNewCustomer(customerData.email, storeId, this.prisma)
+    }
+    if (!shouldSendEvent) return
+
+    const contentIds = cartData.items?.map((item: any) => item.productId || item.variantId) || []
+    const contents = cartData.items?.map((item: any) => ({
+      id: item.productId || item.variantId,
+      quantity: item.quantity,
+      item_price: item.unitPrice,
+    })) || []
+
+    await this.metaService.sendPurchaseEvent({
+      pixelId: metaCredentials.pixelId,
+      accessToken: metaCredentials.accessToken,
+      eventData: {
+        eventTime: Math.floor(Date.now() / 1000),
+        eventId: order.id,
+        email: customerData.email,
+        phone: customerData.phone,
+        firstName: customerData.name?.split(' ')[0],
+        lastName: customerData.name?.split(' ').slice(1).join(' '),
+        city: customerData.address?.city,
+        state: customerData.address?.state,
+        zip: customerData.address?.postal_code,
+        country: customerData.address?.country,
+        currency: (cartData.currency || 'EUR').toUpperCase(),
+        value: order.totalAmount / 100,
+        contentIds,
+        contentType: 'product',
+        contents,
+      },
+    })
   }
 
   /**

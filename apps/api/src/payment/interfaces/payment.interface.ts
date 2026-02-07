@@ -41,6 +41,10 @@ export interface PaymentIntentResponse {
   attempts?: Array<{ pspId: string; pspType: string; attemptNumber: number; isFallback: boolean }>
   error?: string
   cartLimitExceeded?: CartLimitExceeded // Limite de panier dépassée avec suggestions
+  // BT + Connect fields
+  platformPublishableKey?: string // Clé publique du compte plateforme (pour 3DS handleNextAction)
+  stripeConnectedAccountId?: string // Connected account ID (pour 3DS handleNextAction)
+  order?: any // Données de l'ordre (quand le paiement est immédiatement succeeded)
 }
 
 export interface RetryPaymentDto {
