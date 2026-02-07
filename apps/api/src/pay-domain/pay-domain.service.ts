@@ -275,6 +275,39 @@ export class PayDomainService {
 
 
 
+  async deleteDomain(domainId: string): Promise<void> {
+    const domain = await this.prisma.payDomain.findUnique({
+      where: { id: domainId },
+    });
+
+    if (!domain) {
+      throw new Error('Domain not found');
+    }
+
+    console.log(`🗑️ Deleting PayDomain ${domain.hostname} (id: ${domainId})`);
+
+    // Supprimer de Vercel
+    const vercelResult = await this.externalDomainService.removeFromVercel(domain.hostname);
+    if (!vercelResult.success) {
+      console.warn(`[PayDomainService] Failed to remove ${domain.hostname} from Vercel:`, vercelResult.error);
+    }
+
+    // Supprimer de Cloudflare
+    if (domain.cloudflareHostnameId) {
+      const cfResult = await this.externalDomainService.removeFromCloudflare(domain.cloudflareHostnameId);
+      if (!cfResult.success) {
+        console.warn(`[PayDomainService] Failed to remove ${domain.hostname} from Cloudflare:`, cfResult.error);
+      }
+    }
+
+    // Supprimer de la DB
+    await this.prisma.payDomain.delete({
+      where: { id: domainId },
+    });
+
+    console.log(`✅ PayDomain ${domain.hostname} deleted successfully`);
+  }
+
   async getDomainsByStore(storeId: string): Promise<PayDomainResponse[]> {
     const domains = await this.prisma.payDomain.findMany({
       where: { storeId },

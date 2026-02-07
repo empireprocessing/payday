@@ -305,7 +305,10 @@ export class StoreService {
       }
     }
 
-    // Si un payDomain est fourni, gérer la relation
+    // Gérer le payDomain séparément via PayDomainService (Vercel + Cloudflare)
+    let shouldCreatePayDomain = false;
+    let newPayDomainHostname: string | undefined;
+
     if (payDomain !== undefined && payDomain !== '') {
       // Vérifier si ce hostname est déjà utilisé par un autre store
       const existingHostname = await this.prisma.payDomain.findUnique({
@@ -322,48 +325,55 @@ export class StoreService {
       });
 
       if (existingPayDomain) {
-        // Vérifier si le hostname change
         const hostnameChanged = existingPayDomain.hostname !== payDomain;
-
-        // Mettre à jour le PayDomain existant
-        updatePayload.payDomain = {
-          update: {
-            hostname: payDomain,
-            // Si le hostname change, remettre le statut à PENDING car les DNS doivent être reconfigurés
-            ...(hostnameChanged ? { status: 'PENDING' } : {})
-          }
-        };
+        if (hostnameChanged) {
+          // Supprimer l'ancien domaine de Vercel/Cloudflare puis de la DB
+          console.log(`🔄 PayDomain hostname changed: ${existingPayDomain.hostname} → ${payDomain}`);
+          await this.payDomainService.deleteDomain(existingPayDomain.id);
+          shouldCreatePayDomain = true;
+          newPayDomainHostname = payDomain;
+        }
+        // Si le hostname n'a pas changé, ne rien faire
       } else {
-        // Créer un nouveau PayDomain
-        updatePayload.payDomain = {
-          create: {
-            hostname: payDomain,
-            status: 'PENDING'
-          }
-        };
+        // Pas de PayDomain existant, en créer un nouveau
+        shouldCreatePayDomain = true;
+        newPayDomainHostname = payDomain;
       }
     }
 
     console.log('🔄 Updating store with payload:', updatePayload);
-    
+
     try {
       // Vérifier d'abord que le store existe
       const storeExists = await this.prisma.store.findUnique({
         where: { id: storeId }
       });
-      
+
       if (!storeExists) {
         console.error(`❌ Store not found with id: ${storeId}`);
         throw new Error(`Store with id ${storeId} not found`);
       }
-      
-      return await this.prisma.store.update({
+
+      const updatedStore = await this.prisma.store.update({
         where: { id: storeId },
         data: updatePayload,
         include: {
           payDomain: true
         }
       });
+
+      // Créer le nouveau PayDomain via PayDomainService (gère Vercel + Cloudflare)
+      if (shouldCreatePayDomain && newPayDomainHostname) {
+        console.log(`🌐 Creating PayDomain ${newPayDomainHostname} via PayDomainService (Vercel + Cloudflare)...`);
+        await this.payDomainService.createPayDomain(storeId, { hostname: newPayDomainHostname });
+        // Recharger le store avec le PayDomain fraîchement créé
+        return await this.prisma.store.findUnique({
+          where: { id: storeId },
+          include: { payDomain: true }
+        });
+      }
+
+      return updatedStore;
     } catch (error) {
       console.error('❌ Error updating store:', error);
       throw error;
