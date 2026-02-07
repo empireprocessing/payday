@@ -85,6 +85,10 @@ model Psp {
   stripePayoutsEnabled  Boolean            @default(true)
   lastStripeCheck       DateTime?
   selfieVerified        Boolean            @default(false)
+  // Stripe Connect
+  stripeConnectedAccountId  String?        // "acct_xxx" - Stripe Connect account ID
+  stripeConnectStatus       String?        // "pending" | "active" | "restricted"
+  stripeConnectOnboardedAt  DateTime?
   config                Json?
   isActive              Boolean            @default(true)
   createdAt             DateTime           @default(now())
@@ -131,6 +135,7 @@ model Checkout {
   lastAttemptStatus PaymentStatus?
   totalAttempts     Int             @default(0)
   assignedPspId     String?
+  btTokenIntentId   String?          // Basis Theory token_intent ID for retry
   events            CheckoutEvent[]
   store             Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
   payments          Payment[]
@@ -193,6 +198,7 @@ model Payment {
   updatedAt        DateTime      @updatedAt
   checkoutId       String?
   clientSecret     String?
+  btTokenIntentId  String?          // Basis Theory token_intent ID
   checkout         Checkout?     @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
   order            Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   psp              Psp?          @relation(fields: [pspId], references: [id], onDelete: SetNull)
