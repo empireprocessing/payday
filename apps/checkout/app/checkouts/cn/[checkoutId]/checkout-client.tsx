@@ -3,9 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import countries from "i18n-iso-countries"
 import { ChevronDown, AlertCircle, CheckCircle, Check } from 'lucide-react'
-import { StripeProvider } from '@/components/stripe-provider'
+import { BTProvider } from '@/components/bt-provider'
 import { PaymentForm } from '@/components/payment-form'
-import { ExpressCheckout } from '@/components/express-checkout'
 import { useCheckoutTracking } from '@/lib/use-checkout-tracking'
 import { useTranslations, useFormattedTranslation } from '@/components/translations-provider'
 import type { Cart } from '@/lib/types'
@@ -244,10 +243,9 @@ interface CheckoutClientProps {
     trustpilotUrl?: string | null
   }
   checkoutId: string
-  publishableKey?: string
 }
 
-export default function CheckoutClient({ cart, store, checkoutId, publishableKey: initialPublishableKey }: CheckoutClientProps) {
+export default function CheckoutClient({ cart, store, checkoutId }: CheckoutClientProps) {
   // Hook de tracking des événements de checkout
   const tracking = useCheckoutTracking({ checkoutId })
   
@@ -286,8 +284,6 @@ export default function CheckoutClient({ cart, store, checkoutId, publishableKey
   const lastTrackedState = useRef<string>('')
 
   const [isOrderSummaryOpen, setIsOrderSummaryOpen] = useState(false)
-  const [publishableKey, setPublishableKey] = useState<string | undefined>(initialPublishableKey)
-  const [isExpressCheckoutAvailable, setIsExpressCheckoutAvailable] = useState(false)
   const [addressData, setAddressData] = useState({
     fullAddress: '',
     line2: '',
@@ -774,64 +770,6 @@ export default function CheckoutClient({ cart, store, checkoutId, publishableKey
           <div className="lg:w-1/2 bg-white">
             <div className="max-w-[550px] ml-auto px-4 sm:px-6 lg:px-10 lg:pr-12 py-6 lg:py-10">
 
-              {/* Express Checkout - Apple Pay / Google Pay */}
-              {publishableKey && (
-                <section className={isExpressCheckoutAvailable ? 'mb-2' : ''}>
-                  {isExpressCheckoutAvailable && (
-                    <div className="text-center mb-3">
-                      <h3 className="text-sm text-gray-500">{t('checkout.expressPayment')}</h3>
-                    </div>
-                  )}
-                  <StripeProvider
-                    publishableKey={publishableKey}
-                    amount={cart.totalAmount}
-                    currency={cart.currency}
-                  >
-                    <ExpressCheckout
-                      checkoutId={checkoutId}
-                      amount={cart.totalAmount}
-                      requiresShipping={store?.requiresShipping !== false}
-                      storeData={store ? {
-                        id: store.id,
-                        name: store.name,
-                        domain: store.domain,
-                        logoUrl: store.logoUrl,
-                        supportEmail: store.supportEmail,
-                        requiresShipping: store.requiresShipping,
-                        shippingMethodTitle: store.shippingMethodTitle,
-                        platform: 'SHOPIFY'
-                      } : undefined}
-                      onAvailabilityChange={setIsExpressCheckoutAvailable}
-                      onTrackingEvent={(event) => {
-                        switch (event) {
-                          case 'express-payment-attempted':
-                            tracking.trackPaymentAttempted()
-                            break
-                          case 'express-payment-successful':
-                            tracking.trackPaymentSuccessful()
-                            break
-                          case 'express-payment-failed':
-                            tracking.trackPaymentFailed()
-                            break
-                        }
-                      }}
-                    />
-                  </StripeProvider>
-                </section>
-              )}
-
-              {/* OR Separator - Only visible if express checkout is available */}
-              {isExpressCheckoutAvailable && (
-                <div className="relative py-4">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-200"></div>
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="px-4 bg-white text-sm text-gray-500 font-medium">{t('checkout.or')}</span>
-                  </div>
-                </div>
-              )}
-
               {/* Contact Section */}
               <section className="mb-8">
                 <h2 className="text-[21px] font-semibold text-gray-900 mb-4">{t('checkout.contact')}</h2>
@@ -1053,8 +991,7 @@ export default function CheckoutClient({ cart, store, checkoutId, publishableKey
                   </div>
                 )}
 
-                {publishableKey ? (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
                     {/* Credit Card Header */}
                     <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
                       <div className="flex items-center justify-between">
@@ -1069,13 +1006,8 @@ export default function CheckoutClient({ cart, store, checkoutId, publishableKey
 
                     {/* Credit Card Form */}
                     <div className="p-4 bg-white">
-                      <StripeProvider
-                        clientSecret={undefined}
-                        publishableKey={publishableKey}
-                      >
+                      <BTProvider>
                         <PaymentForm
-                          clientSecret={undefined}
-                          paymentIntentId={undefined}
                           amount={cart.totalAmount}
                           checkoutId={checkoutId}
                           customerData={{
@@ -1110,10 +1042,6 @@ export default function CheckoutClient({ cart, store, checkoutId, publishableKey
                             platform: 'SHOPIFY'
                           } : undefined}
                           onPaymentReady={setPaymentHandlers}
-                          onReinitStripe={(p) => {
-                            // Lors d'un retry, on met à jour la publishableKey pour remount Elements avec le nouveau PSP
-                            setPublishableKey(p.publishableKey)
-                          }}
                           onMessageChange={setPaymentMessage}
                           onTrackingEvent={(event, metadata) => {
                             switch (event) {
@@ -1135,7 +1063,7 @@ export default function CheckoutClient({ cart, store, checkoutId, publishableKey
                             }
                           }}
                         />
-                      </StripeProvider>
+                      </BTProvider>
 
                       {/* Use same address checkbox */}
                       <ShopifyCheckbox
@@ -1257,13 +1185,6 @@ export default function CheckoutClient({ cart, store, checkoutId, publishableKey
                       )}
                     </div>
                   </div>
-                ) : (
-                  <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50">
-                    <p className="text-sm text-yellow-800">
-                      {t('checkout.paymentNotAvailable')}
-                    </p>
-                  </div>
-                )}
               </section>
 
               {/* Remember Me Section - Commented out
@@ -1288,8 +1209,6 @@ export default function CheckoutClient({ cart, store, checkoutId, publishableKey
               {/* Pay Button */}
               <button
                 onClick={(e) => {
-                  if (!publishableKey) return
-
                   const isValid = validateAllFields()
                   if (!isValid) {
                     e.preventDefault()

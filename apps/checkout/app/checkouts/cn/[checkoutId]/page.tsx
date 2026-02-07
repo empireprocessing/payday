@@ -1,4 +1,4 @@
-import { getCheckoutInfo, getPublishableKey } from '@/lib/cart-actions'
+import { getCheckoutInfo } from '@/lib/cart-actions'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { Metadata } from 'next'
@@ -135,16 +135,11 @@ export default async function CheckoutPage({ params }: PageProps) {
     )
   }
 
-  // Récupérer la publishableKey côté serveur
-  const publishableKeyResult = await getPublishableKey(checkoutId)
-  const publishableKey = publishableKeyResult.success ? publishableKeyResult.publishableKey : undefined
-
   return (
     <CheckoutClient
       cart={checkoutInfo.cart}
       store={checkoutInfo.store}
       checkoutId={checkoutId}
-      publishableKey={publishableKey}
     />
   )
 }
