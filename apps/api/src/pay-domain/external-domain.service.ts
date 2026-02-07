@@ -74,6 +74,13 @@ export interface CloudflareDomainResult {
 export class ExternalDomainService {
   private readonly logger = new Logger(ExternalDomainService.name);
 
+  /** Build Vercel URL with optional teamId query param */
+  private vercelUrl(path: string): string {
+    const teamId = process.env.VERCEL_TEAM_ID;
+    const separator = path.includes('?') ? '&' : '?';
+    return teamId ? `https://api.vercel.com${path}${separator}teamId=${teamId}` : `https://api.vercel.com${path}`;
+  }
+
   async addToVercel(hostname: string, projectId?: string): Promise<VercelDomainResult> {
     try {
       // Utiliser les credentials fournis ou les variables d'environnement
@@ -89,7 +96,7 @@ export class ExternalDomainService {
       this.logger.log(`[Vercel] Using token: ${vercelToken.substring(0, 10)}...`);
 
       // Essayer directement d'ajouter le domaine (certains tokens peuvent avoir accès direct sans vérification préalable)
-      const response = await fetch(`https://api.vercel.com/v10/projects/${vercelProjectId}/domains`, {
+      const response = await fetch(this.vercelUrl(`/v10/projects/${vercelProjectId}/domains`), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${vercelToken}`,
@@ -104,7 +111,7 @@ export class ExternalDomainService {
         const errorData = await response.json();
         this.logger.error(`[Vercel] API error (status ${response.status}):`, JSON.stringify(errorData, null, 2));
         this.logger.error(`[Vercel] Request details:`, {
-          url: `https://api.vercel.com/v10/projects/${vercelProjectId}/domains`,
+          url: this.vercelUrl(`/v10/projects/${vercelProjectId}/domains`),
           projectId: vercelProjectId,
           hostname: hostname,
         });
@@ -113,7 +120,7 @@ export class ExternalDomainService {
         if (response.status === 404 || (errorData.error?.code === 'not_found')) {
           // Vérifier les informations du compte
           try {
-            const userResponse = await fetch(`https://api.vercel.com/v2/user`, {
+            const userResponse = await fetch(this.vercelUrl(`/v2/user`), {
               method: 'GET',
               headers: {
                 'Authorization': `Bearer ${vercelToken}`,
@@ -227,7 +234,7 @@ export class ExternalDomainService {
 
       this.logger.log(`Removing domain ${hostname} from Vercel project ${vercelProjectId}`);
 
-      const response = await fetch(`https://api.vercel.com/v10/projects/${vercelProjectId}/domains/${hostname}`, {
+      const response = await fetch(this.vercelUrl(`/v10/projects/${vercelProjectId}/domains/${hostname}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${vercelToken}`,
@@ -269,7 +276,7 @@ export class ExternalDomainService {
       this.logger.log(`[Vercel] Getting domain info for ${hostname} in project ${vercelProjectId}`);
 
       // Récupérer les domaines du projet
-      const response = await fetch(`https://api.vercel.com/v9/projects/${vercelProjectId}/domains`, {
+      const response = await fetch(this.vercelUrl(`/v9/projects/${vercelProjectId}/domains`), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${vercelToken}`,
@@ -310,7 +317,7 @@ export class ExternalDomainService {
 
       this.logger.log(`[Vercel] Getting domain config for ${hostname}`);
 
-      const response = await fetch(`https://api.vercel.com/v6/domains/${hostname}/config`, {
+      const response = await fetch(this.vercelUrl(`/v6/domains/${hostname}/config`), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${vercelToken}`,
