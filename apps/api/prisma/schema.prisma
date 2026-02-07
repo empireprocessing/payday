@@ -1,0 +1,357 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Store {
+  id                   String         @id @default(cuid())
+  name                 String
+  domain               String         @unique
+  supportEmail         String?
+  logoUrl              String?
+  runner               String?        // Nom de la personne responsable de la boutique
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  platform             StorePlatform  @default(SHOPIFY)
+  platformConfig       Json?
+  requiresShipping     Boolean        @default(true)
+  // Shipping/Address section config
+  addressSectionTitle  String?        // Default: "Livraison" - can be changed to "Facturation" etc.
+  // Shipping display config (supports {{minDate}} and {{maxDate}} variables in subtitle)
+  shippingMethodTitle  String?        // Default: "Livraison standard"
+  shippingMethodSubtitle String?      // Default: "Entre le {{minDate}} et le {{maxDate}}"
+  shippingMinDays      Int            @default(1)
+  shippingMaxDays      Int            @default(2)
+  // Shipping method image config
+  shippingDisplayType  String?        // "icon" (small, left of text) or "logo" (wider, replaces "Gratuit" on the right)
+  shippingImageUrl     String?        // URL of the icon or logo image
+  // Trust badges config - Array of { icon: string, title: string, subtitle: string }
+  trustBadges          Json?
+  // Checkout config - { language: string, theme?: object, customTranslations?: object, etc. }
+  checkoutConfig       Json?
+  metaAccessToken      String?
+  metaNewCustomersOnly Boolean        @default(false)
+  metaPixelId          String?
+  tiktokPixelId        String?
+  // Trustpilot widget config
+  trustpilotEnabled    Boolean        @default(false)
+  trustpilotRating     Float?         // ex: 4.7
+  trustpilotReviewCount Int?          // ex: 3167
+  trustpilotUrl        String?        // Lien vers la page Trustpilot
+  // PSP List tracking - ID de la liste de PSP utilisée par cette boutique
+  pspListId            String?
+  pspList              PspList?      @relation(fields: [pspListId], references: [id], onDelete: SetNull)
+  checkouts            Checkout[]
+  payDomain            PayDomain?
+  orders               Order[]
+  payments             Payment[]
+  routingConfig        RoutingConfig?
+  psps                 StorePSP[]
+
+  @@map("stores")
+}
+
+model PayDomain {
+  id                   String          @id @default(cuid())
+  storeId              String          @unique
+  hostname             String          @unique
+  status               PayDomainStatus @default(PENDING)
+  lastError            String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  cloudflareHostnameId String?
+  store                Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("domains")
+}
+
+model Psp {
+  id                    String             @id @default(cuid())
+  name                  String
+  pspType               String
+  publicKey             String
+  secretKey             String
+  monthlyCapacityEur    Int?
+  dailyCapacityEur      Int?
+  currentMonthUsage     Int                @default(0)
+  currentDayUsage       Int                @default(0)
+  lastDayUsageReset     DateTime?
+  lastMonthUsageReset   DateTime?
+  stripeChargesEnabled  Boolean            @default(true)
+  stripePayoutsEnabled  Boolean            @default(true)
+  lastStripeCheck       DateTime?
+  selfieVerified        Boolean            @default(false)
+  config                Json?
+  isActive              Boolean            @default(true)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  deletedAt             DateTime?
+  // Balance caching
+  balanceAvailableEur   Int?
+  balancePendingEur     Int?
+  balanceRawData        Json?
+  balanceLastUpdated    DateTime?
+  fallbackSequence      FallbackSequence[]
+  payments              Payment[]
+  pspWeights            PSPWeight[]
+  stores                StorePSP[]
+  pspLists              PspListItem[]
+
+  @@map("psps")
+}
+
+model StorePSP {
+  id        String   @id @default(cuid())
+  storeId   String
+  pspId     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  psp       Psp      @relation(fields: [pspId], references: [id], onDelete: Cascade)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, pspId])
+  @@map("store_psps")
+}
+
+model Checkout {
+  id                String          @id
+  storeId           String
+  cartId            String
+  cartData          Json
+  status            CheckoutStatus  @default(PENDING)
+  expiresAt         DateTime
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  lastAttemptAt     DateTime?
+  lastAttemptPspId  String?
+  lastAttemptStatus PaymentStatus?
+  totalAttempts     Int             @default(0)
+  assignedPspId     String?
+  events            CheckoutEvent[]
+  store             Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  payments          Payment[]
+
+  @@map("checkouts")
+}
+
+model Order {
+  id            String        @id @default(cuid())
+  storeId       String
+  customerEmail String
+  subtotal      Int
+  shippingCost  Int           @default(0)
+  totalAmount   Int
+  currency      String        @default("USD")
+  status        OrderStatus   @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING)
+  metadata      Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  items         OrderItem[]
+  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  payments      Payment[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  productId   String?
+  quantity    Int     @default(1)
+  unitPrice   Int
+  totalPrice  Int
+  name        String
+  description String?
+  image       String?
+  metadata    Json?
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  orderId          String?
+  storeId          String
+  pspId            String?
+  pspPaymentId     String?
+  pspIntentId      String?
+  attemptNumber    Int           @default(1)
+  isFallback       Boolean       @default(false)
+  processingTimeMs Int?
+  amount           Int
+  currency         String        @default("USD")
+  status           PaymentStatus @default(PENDING)
+  pspMetadata      Json?
+  failureReason    String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  checkoutId       String?
+  clientSecret     String?
+  checkout         Checkout?     @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+  order            Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  psp              Psp?          @relation(fields: [pspId], references: [id], onDelete: SetNull)
+  store            Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model RoutingConfig {
+  id               String             @id @default(cuid())
+  storeId          String             @unique
+  mode             RoutingMode        @default(AUTOMATIC)
+  fallbackEnabled  Boolean            @default(true)
+  maxRetries       Int                @default(2)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  fallbackSequence FallbackSequence[]
+  pspWeights       PSPWeight[]
+  store            Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("routing_configs")
+}
+
+model PSPWeight {
+  id              String        @id @default(cuid())
+  routingConfigId String
+  pspId           String
+  weight          Int
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  psp             Psp           @relation(fields: [pspId], references: [id], onDelete: Cascade)
+  routingConfig   RoutingConfig @relation(fields: [routingConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([routingConfigId, pspId])
+  @@map("psp_weights")
+}
+
+model FallbackSequence {
+  id              String        @id @default(cuid())
+  routingConfigId String
+  pspId           String
+  order           Int
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  psp             Psp           @relation(fields: [pspId], references: [id], onDelete: Cascade)
+  routingConfig   RoutingConfig @relation(fields: [routingConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([routingConfigId, order])
+  @@unique([routingConfigId, pspId])
+  @@map("fallback_sequences")
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  entityType String
+  entityId   String
+  action     AuditAction
+  changes    Json?
+  userId     String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  @@map("audit_logs")
+}
+
+model CheckoutEvent {
+  id         String       @id @default(cuid())
+  checkoutId String
+  step       CheckoutStep
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+  checkout   Checkout     @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+
+  @@map("checkout_events")
+}
+
+model PspList {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  items       PspListItem[]
+  stores      Store[]
+
+  @@map("psp_lists")
+}
+
+model PspListItem {
+  id        String   @id @default(cuid())
+  pspListId String
+  pspId     String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  pspList   PspList  @relation(fields: [pspListId], references: [id], onDelete: Cascade)
+  psp       Psp      @relation(fields: [pspId], references: [id], onDelete: Cascade)
+
+  @@unique([pspListId, pspId])
+  @@map("psp_list_items")
+}
+
+enum StorePlatform {
+  SHOPIFY
+  WOOCOMMERCE
+  PRESTASHOP
+  MAGENTO
+  CUSTOM
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum RoutingMode {
+  AUTOMATIC
+  MANUAL
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum PayDomainStatus {
+  PENDING
+  ACTIVE
+  FAILED
+}
+
+enum CheckoutStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum CheckoutStep {
+  CHECKOUT_INITIATED
+  CUSTOMER_INFO_PROGRESS
+  CUSTOMER_INFO_ENTERED
+  PAYMENT_INFO_STARTED
+  PAYMENT_INFO_COMPLETED
+  PAY_BUTTON_CLICKED
+  PAYMENT_ATTEMPTED
+  PAYMENT_SUCCESSFUL
+  PAYMENT_FAILED
+}

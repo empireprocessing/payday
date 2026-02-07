@@ -1,0 +1,79 @@
+/* HeyPay Payment Form Styles */
+
+body #payment #heypay-payment-wrapper label {
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0 0 5px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+body #payment #heypay-payment-wrapper .heypay-stripe-field {
+    box-shadow: rgb(239, 239, 239) 0 0 0 1px;
+    padding: 10px;
+    margin: 0;
+    outline: 0;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    background-color: #fff;
+    font-size: 14px;
+    transition: border-color 0.3s ease;
+}
+
+body #payment #heypay-payment-wrapper .heypay-stripe-field:focus-within {
+    border-color: #646970;
+}
+
+/* Card Number field - with icon space */
+body #payment #heypay-payment-wrapper .heypay-stripe-field.heypay-card-number {
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 40px;
+}
+
+/* Form rows */
+body #heypay-payment-wrapper .heypay-form-row {
+    margin: 10px 0;
+}
+
+body #heypay-payment-wrapper .heypay-form-row:after {
+    display: block;
+    content: '';
+    clear: both;
+}
+
+body #heypay-payment-wrapper .heypay-field-wrapper {
+    display: flex;
+    gap: 15px;
+}
+
+body #heypay-payment-wrapper .heypay-field-half {
+    flex: 1;
+}
+
+/* Error messages */
+body #payment .heypay-error-text {
+    color: #dc3545;
+    font-size: 13px;
+    margin-top: 5px;
+    display: block;
+}
+
+/* Required asterisk */
+body #payment #heypay-payment-wrapper .required {
+    color: red;
+    font-weight: bold;
+}
+
+/* Test mode description */
+body #payment .heypay-test-description {
+    margin: 10px 0;
+    padding: 10px;
+    background: #f0f0f1;
+    border-left: 4px solid #72aee6;
+}
+
+body #payment .heypay-test-description p {
+    font-size: 13px;
+    margin: 0;
+}

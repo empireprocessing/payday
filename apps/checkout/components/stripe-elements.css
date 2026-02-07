@@ -1,0 +1,97 @@
+/* stripe-elements.css */
+
+/* Container pour chaque élément Stripe */
+.stripe-element-container {
+  position: relative;
+  height: 48px; /* h-12 exact */
+  border: 1px solid oklch(0.922 0 0); /* border exact */
+  border-radius: 8px; /* rounded-md */
+  background-color: transparent;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-xs exact */
+  transition: color 150ms ease-in-out, box-shadow 150ms ease-in-out, border-color 150ms ease-in-out;
+  overflow: hidden;
+}
+
+/* Focus state - reproduit exactement focus-visible:ring-2 focus-visible:ring-black */
+.stripe-element-container.focused {
+  border-color: transparent; /* focus-visible:border-transparent */
+  outline: none;
+  box-shadow: 0 0 0 2px #000000; /* focus-visible:ring-2 focus-visible:ring-black */
+}
+
+/* Invalid state - comme aria-invalid styles */
+.stripe-element-container.invalid {
+  border-color: rgb(239 68 68); /* border-destructive */
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2); /* ring-destructive/20 */
+}
+
+/* L'élément Stripe lui-même */
+.stripe-element {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  padding-top: 22px; /* Ajusté à 22px pour être cohérent avec le label à 6px */
+  padding-bottom: 6px; /* pb-1.5 (0.375rem = 6px) */ 
+  padding-left: 12px; /* px-3 (0.75rem = 12px) */
+  padding-right: 12px; /* px-3 */
+  background-color: transparent;
+  border: none;
+  outline: none;
+}
+
+/* Quand l'input est vide et pas en focus, centrer verticalement */
+.stripe-element-container.empty:not(.focused) .stripe-element {
+  padding-top: 12px; /* centré verticalement */
+  padding-bottom: 12px;
+}
+
+/* Label flottant - reproduction exacte du FloatingLabel */
+.stripe-element-label {
+  position: absolute;
+  pointer-events: none;
+  left: 12px; /* left-3 exact (0.75rem = 12px) */
+  top: 6px; /* Remonté de 8px à 6px pour mieux centrer l'ensemble */
+  font-size: 12px; /* text-xs quand flottant */
+  color: rgb(107 114 128); /* text-gray-500 exact */
+  transform-origin: top left; /* origin-top-left */
+  transform: scale(0.9); /* scale-90 exact */
+  transition: all 200ms cubic-bezier(0, 0, 0.2, 1); /* duration-200 avec même easing */
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Label état normal (quand input vide et pas focus) */
+.stripe-element-container.empty:not(.focused) .stripe-element-label {
+  top: 50%; /* top-1/2 */
+  transform: translateY(-50%) scale(1); /* -translate-y-1/2 sans scale */
+  font-size: 14px; /* text-sm état normal */
+  color: rgb(107 114 128); /* text-gray-500 */
+}
+
+/* Label au focus (garde l'état flottant) */
+.stripe-element-container.focused .stripe-element-label {
+  top: 6px; /* Cohérent avec la position par défaut */
+  transform: scale(0.9); /* scale-90 */
+  font-size: 12px; /* text-xs */
+}
+
+/* Label quand il y a du contenu (pas vide) */
+.stripe-element-container:not(.empty) .stripe-element-label {
+  top: 6px; /* Cohérent avec la position par défaut */
+  transform: scale(0.9); /* scale-90 */
+  font-size: 12px; /* text-xs */
+}
+
+/* Label état invalide */
+.stripe-element-container.invalid .stripe-element-label {
+  color: rgb(239 68 68); /* text-destructive */
+}
+
+/* Message d'erreur */
+.stripe-element-error {
+  color: rgb(239 68 68); /* text-destructive */
+  font-size: 12px;
+  margin-top: 4px;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  position: static; /* Positionnement normal, pas absolu */
+  display: block;
+}

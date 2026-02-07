@@ -1,0 +1,460 @@
+'use server';
+
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+// Import des types partagés pour utilisation interne uniquement
+import type {
+  ShopifyConfig,
+  WooCommerceConfig,
+  PrestashopConfig,
+  MagentoConfig,
+  CustomConfig,
+  PlatformConfig,
+  Store,
+  CreateStoreData,
+  UpdateStoreData,
+} from './types';
+
+// IMPORTANT: Un fichier 'use server' ne peut exporter QUE des fonctions async
+// Les types doivent être importés depuis './types' par les consommateurs
+
+// Types pour correspondre à l'API (usage interne uniquement)
+interface OverviewMetrics {
+  totalStores: number;
+  totalPsps: number;
+  totalOrders: number;
+  totalPayments: number;
+  successfulPayments: number;
+  conversionRate: number;
+  totalRevenue: number;
+  // Données de croissance par rapport à la période précédente
+  growth: {
+    stores: number; // pourcentage de croissance des boutiques
+    psps: number; // pourcentage de croissance des PSP
+    payments: number; // pourcentage de croissance des paiements
+    revenue: number; // pourcentage de croissance des revenus
+  };
+}
+
+export interface StoreMetric {
+  id: string;
+  name: string;
+  domain: string;
+  totalOrders: number;
+  successfulOrders: number;
+  totalRevenue: number;
+  pspCount: number;
+  conversionRate: number;
+}
+
+export interface PspMetric {
+  id: string;
+  pspType: string;
+  name: string;
+  storeName: string;
+  storeId: string;
+  totalPayments: number;
+  successfulPayments: number;
+  totalRevenue: number;
+  conversionRate: number;
+  isActive: boolean;
+  avgProcessingTime?: number;
+}
+
+export interface TrendData {
+  date: string;
+  totalPayments: number;
+  successfulPayments: number;
+  totalAmount: number;
+  successfulAmount: number;
+  pspBreakdown: Record<string, {
+    total: number;
+    successful: number;
+    amount: number;
+  }>;
+}
+
+export interface PspComparison {
+  pspType: string;
+  name: string;
+  totalConfigurations: number;
+  activeConfigurations: number;
+  totalPayments: number;
+  successfulPayments: number;
+  totalRevenue: number;
+  conversionRate: number;
+}
+
+export interface StorePSP {
+  id: string;
+  storeId: string;
+  pspType: string;
+  name: string;
+  publicKey: string;
+  secretKey: string;
+  monthlyCapacityEur?: number;
+  dailyCapacityEur?: number;
+  currentMonthUsage: number;
+  currentDayUsage: number;
+  isActive: boolean;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PSPWithStoreCount {
+  id: string;
+  name: string;
+  pspType: string;
+  publicKey: string;
+  secretKey: string;
+  monthlyCapacityEur?: number;
+  dailyCapacityEur?: number;
+  currentMonthUsage: number;
+  currentDayUsage: number;
+  isActive: boolean;
+  config?: Record<string, unknown> | null;
+  connectedStores: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoreAnalytics {
+  store: {
+    id: string;
+    name: string;
+    domain: string;
+    activePsps: number;
+  };
+  psps: Array<{
+    id: string;
+    name: string;
+    pspType: string;
+    totalPayments: number;
+    successfulPayments: number;
+    totalRevenue: number;
+    conversionRate: number;
+    avgProcessingTime?: number;
+  }>;
+  routing: {
+    weights: Array<{
+      pspId: string;
+      pspName: string;
+      weight: number;
+    }>;
+    fallbackSequence: Array<{
+      pspId: string;
+      pspName: string;
+      order: number;
+    }>;
+  };
+}
+
+// Configuration de l'API interne
+const API_BASE_URL = process.env.INTERNAL_API_URL || 'http://localhost:5000';
+
+class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options,
+    });
+
+    if (!response.ok) {
+      throw new ApiError(response.status, `API Error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new ApiError(0, `Impossible de se connecter à l'API (${url}). Vérifiez que l'API est démarrée.`);
+    }
+    throw error;
+  }
+}
+
+// Server Actions pour Analytics
+export async function getAnalyticsOverview(period: 'day' | 'week' | 'month' = 'month'): Promise<OverviewMetrics> {
+  return apiRequest(`/analytics/overview?period=${period}`);
+}
+
+export async function getStoreMetrics(period: 'day' | 'week' | 'month' = 'month'): Promise<StoreMetric[]> {
+  return apiRequest(`/analytics/stores?period=${period}`);
+}
+
+export async function getPspMetrics(period: 'day' | 'week' | 'month' = 'month'): Promise<PspMetric[]> {
+  return apiRequest(`/analytics/psps?period=${period}`);
+}
+
+export async function getTrendData(period: 'day' | 'week' | 'month' = 'week', days: number = 7): Promise<TrendData[]> {
+  return apiRequest(`/analytics/trends?period=${period}&days=${days}`);
+}
+
+export async function getPspComparison(): Promise<PspComparison[]> {
+  return apiRequest(`/analytics/psp-comparison`);
+}
+
+export async function getStoreAnalytics(storeId: string, period: 'day' | 'week' | 'month' = 'month'): Promise<StoreAnalytics> {
+  return apiRequest(`/analytics/stores/${storeId}?period=${period}`);
+}
+
+export async function getStoreConversionFunnel(storeId: string, period: 'day' | 'week' | 'month' = 'month'): Promise<{
+  store: { id: string; name: string; domain: string };
+  funnel: {
+    checkoutsInitiated: number;
+    customerInfoProgress: number;
+    customerInfoEntered: number;
+    paymentInfoStarted: number;
+    paymentInfoCompleted: number;
+    payButtonClicked: number;
+    paymentAttempted: number;
+    paymentSuccessful: number;
+  };
+  conversionRates: {
+    customerInfoRate: number;
+    paymentStartRate: number;
+    paymentCompleteRate: number;
+    payButtonRate: number;
+    paymentAttemptRate: number;
+    finalConversionRate: number;
+  };
+}> {
+  return apiRequest(`/analytics/stores/${storeId}/funnel?period=${period}`);
+}
+
+export async function getRealtime(): Promise<OverviewMetrics> {
+  return apiRequest('/analytics/realtime');
+}
+
+// Server Actions pour Stores
+export async function getAllStores(): Promise<Store[]> {
+  return apiRequest('/store');
+}
+
+export async function getStoreById(id: string): Promise<Store> {
+  return apiRequest(`/store/${id}`);
+}
+
+export async function createStore(data: CreateStoreData): Promise<Store> {
+  return apiRequest('/store', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateStore(id: string, data: UpdateStoreData): Promise<Store> {
+  return apiRequest(`/store/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteStore(id: string): Promise<void> {
+  return apiRequest(`/store/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// Server Actions pour DNS
+export async function verifyDnsRecord(hostname: string): Promise<{ success: boolean; error?: string }> {
+  return apiRequest('/dns/verify', {
+    method: 'POST',
+    body: JSON.stringify({ hostname }),
+  });
+}
+
+// Server Actions pour PSPs
+export async function getAllPsps(): Promise<PSPWithStoreCount[]> {
+  return apiRequest('/psp');
+}
+
+export async function getPspById(id: string): Promise<PSPWithStoreCount> {
+  return apiRequest(`/psp/${id}`);
+}
+
+export async function getPspsByStore(storeId: string): Promise<StorePSP[]> {
+  return apiRequest(`/psp/store/${storeId}`);
+}
+
+export async function createPsp(data: {
+  name: string;
+  pspType: string;
+  publicKey: string;
+  secretKey: string;
+  monthlyCapacityEur?: number;
+  dailyCapacityEur?: number;
+  config?: Record<string, unknown>;
+}): Promise<PSPWithStoreCount> {
+  return apiRequest('/psp', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updatePsp(id: string, data: {
+  name?: string;
+  monthlyCapacityEur?: number;
+  dailyCapacityEur?: number;
+  isActive?: boolean;
+}): Promise<PSPWithStoreCount> {
+  return apiRequest(`/psp/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updatePspCredentials(id: string, credentials: {
+  publicKey?: string;
+  secretKey?: string;
+}): Promise<PSPWithStoreCount> {
+  return apiRequest(`/psp/${id}/credentials`, {
+    method: 'PUT',
+    body: JSON.stringify(credentials),
+  });
+}
+
+export async function deletePsp(id: string): Promise<void> {
+  return apiRequest(`/psp/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// Server Actions pour StorePSP
+export async function linkStorePsp(storeId: string, pspId: string): Promise<{ success: boolean }> {
+  return apiRequest('/store-psp/link', {
+    method: 'POST',
+    body: JSON.stringify({ storeId, pspId }),
+  });
+}
+
+export async function unlinkStorePsp(storeId: string, pspId: string): Promise<void> {
+  return apiRequest('/store-psp/unlink', {
+    method: 'DELETE',
+    body: JSON.stringify({ storeId, pspId }),
+  });
+}
+
+export async function getStorePsps(storeId: string): Promise<StorePSP[]> {
+  return apiRequest(`/store-psp/store/${storeId}`);
+}
+
+// Server Actions pour Orders
+export async function getAllOrders(): Promise<Record<string, unknown>[]> {
+  return apiRequest('/order');
+}
+
+export async function getOrderById(id: string): Promise<Record<string, unknown>> {
+  return apiRequest(`/order/${id}`);
+}
+
+// Server Actions pour Payments
+export async function getAllPayments(): Promise<Record<string, unknown>[]> {
+  return apiRequest('/payment');
+}
+
+export async function getPaymentById(id: string): Promise<Record<string, unknown>> {
+  return apiRequest(`/payment/${id}`);
+}
+
+// Server Actions pour Routing
+export async function getRoutingConfig(storeId: string): Promise<Record<string, unknown>> {
+  return apiRequest(`/routing/store/${storeId}`);
+}
+
+export async function updateRoutingConfig(storeId: string, config: {
+  mode: 'AUTOMATIC' | 'MANUAL';
+  fallbackEnabled: boolean;
+  maxRetries: number;
+  weights?: Array<{ pspId: string; weight: number }>;
+  fallbackSequence?: Array<{ pspId: string; order: number }>;
+}): Promise<Record<string, unknown>> {
+  return apiRequest(`/routing/store/${storeId}`, {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function updateRoutingWeights(storeId: string, weights: Array<{ pspId: string; weight: number }>): Promise<Record<string, unknown>> {
+  return apiRequest(`/routing/store/${storeId}/weights`, {
+    method: 'PUT',
+    body: JSON.stringify(weights),
+  });
+}
+
+export async function updateRoutingFallback(storeId: string, sequence: Array<{ pspId: string; order: number }>): Promise<Record<string, unknown>> {
+  return apiRequest(`/routing/store/${storeId}/fallback`, {
+    method: 'PUT',
+    body: JSON.stringify(sequence),
+  });
+}
+
+export async function authenticateWithToken(token: string) {
+  const expectedToken = process.env.DASHBOARD_ACCESS_TOKEN
+  
+  if (!expectedToken) {
+    throw new Error("Token d'accès non configuré")
+  }
+  
+  if (token === expectedToken) {
+    // Créer un cookie de session pour maintenir l'authentification
+    const cookieStore = await cookies()
+    cookieStore.set("dashboard-auth", "authenticated", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 60 * 60 * 24 * 7, // 7 jours
+    })
+    
+    return { success: true }
+  } else {
+    throw new Error("Token invalide")
+  }
+}
+
+export async function checkAuthStatus() {
+  const cookieStore = await cookies()
+  const authCookie = cookieStore.get("dashboard-auth")
+  
+  if (authCookie?.value === "authenticated") {
+    return { isAuthenticated: true }
+  }
+  
+  return { isAuthenticated: false }
+}
+
+export async function requireAuth() {
+  const { isAuthenticated } = await checkAuthStatus()
+  
+  if (!isAuthenticated) {
+    redirect("/login")
+  }
+}
+
+export async function logout() {
+  const cookieStore = await cookies()
+  cookieStore.delete("dashboard-auth")
+  redirect("/login")
+}
+
+export async function redirectIfAuthenticated() {
+  const { isAuthenticated } = await checkAuthStatus()
+  
+  if (isAuthenticated) {
+    redirect("/")
+  }
+}
+
+
