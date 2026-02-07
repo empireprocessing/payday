@@ -8,9 +8,10 @@ import { ShopifyModule } from '../shopify/shopify.module';
 import { WoocommerceModule } from '../woocommerce/woocommerce.module';
 import { RoutingModule } from '../routing/routing.module';
 import { MetaModule } from '../meta/meta.module';
+import { BasisTheoryModule } from '../basis-theory/basis-theory.module';
 
 @Module({
-  imports: [PspModule, OrderModule, StoreModule, ShopifyModule, WoocommerceModule, RoutingModule, MetaModule],
+  imports: [PspModule, OrderModule, StoreModule, ShopifyModule, WoocommerceModule, RoutingModule, MetaModule, BasisTheoryModule],
   providers: [PaymentService],
   controllers: [PaymentController],
   exports: [PaymentService],

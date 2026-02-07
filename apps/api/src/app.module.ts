@@ -17,9 +17,10 @@ import { CheckoutModule } from './checkout/checkout.module';
 import { WoocommerceModule } from './woocommerce/woocommerce.module';
 import { MetaModule } from './meta/meta.module';
 import { PspListModule } from './psp-list/psp-list.module';
+import { BasisTheoryModule } from './basis-theory/basis-theory.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), CommonModule, PspModule, PaymentModule, OrderModule, StoreModule, AnalyticsModule, ShopifyModule, RoutingModule, StorePspModule, PayDomainModule, DnsModule, CheckoutModule, WoocommerceModule, MetaModule, PspListModule],
+  imports: [ScheduleModule.forRoot(), CommonModule, PspModule, PaymentModule, OrderModule, StoreModule, AnalyticsModule, ShopifyModule, RoutingModule, StorePspModule, PayDomainModule, DnsModule, CheckoutModule, WoocommerceModule, MetaModule, PspListModule, BasisTheoryModule],
   controllers: [AppController],
   providers: [AppService],
 })
