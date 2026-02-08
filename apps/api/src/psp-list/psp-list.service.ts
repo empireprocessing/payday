@@ -167,52 +167,57 @@ export class PspListService {
     }
 
     // Si pspIds est fourni, mettre à jour les items de la liste
-    if (data.pspIds !== undefined && data.pspIds.length > 0) {
-      // Vérifier que les PSP existent et sont actifs
-      const psps = await this.prisma.psp.findMany({
-        where: {
-          id: { in: data.pspIds },
-          isActive: true,
-          deletedAt: null,
-        },
-      });
-
-      if (psps.length !== data.pspIds.length) {
-        throw new BadRequestException('Un ou plusieurs PSP sont invalides ou inactifs');
-      }
-
-      // Supprimer les items qui ne sont plus dans la liste
-      const currentPspIds = list.items.map(item => item.pspId);
-      const pspIdsToRemove = currentPspIds.filter(pspId => !data.pspIds!.includes(pspId));
-      
-      if (pspIdsToRemove.length > 0) {
+    if (data.pspIds !== undefined) {
+      if (data.pspIds.length === 0) {
+        // Liste vide : supprimer tous les items
         await this.prisma.pspListItem.deleteMany({
+          where: { pspListId: id },
+        });
+      } else {
+        // Vérifier que les PSP existent et sont actifs
+        const psps = await this.prisma.psp.findMany({
           where: {
-            pspListId: id,
-            pspId: { in: pspIdsToRemove },
+            id: { in: data.pspIds },
+            isActive: true,
+            deletedAt: null,
           },
         });
-      }
 
-      // Ajouter les nouveaux PSP
-      const pspIdsToAdd = data.pspIds!.filter(pspId => !currentPspIds.includes(pspId));
-      
-      if (pspIdsToAdd.length > 0) {
-        const maxOrder = list.items.length > 0
-          ? Math.max(...list.items.map(item => item.order))
-          : -1;
+        if (psps.length !== data.pspIds.length) {
+          throw new BadRequestException('Un ou plusieurs PSP sont invalides ou inactifs');
+        }
 
-        await this.prisma.pspListItem.createMany({
-          data: pspIdsToAdd.map((pspId, index) => ({
-            pspListId: id,
-            pspId,
-            order: maxOrder + 1 + index,
-          })),
-        });
-      }
+        // Supprimer les items qui ne sont plus dans la liste
+        const currentPspIds = list.items.map(item => item.pspId);
+        const pspIdsToRemove = currentPspIds.filter(pspId => !data.pspIds!.includes(pspId));
 
-      // Réorganiser l'ordre des PSP restants selon l'ordre dans pspIds
-      if (data.pspIds && data.pspIds.length > 0) {
+        if (pspIdsToRemove.length > 0) {
+          await this.prisma.pspListItem.deleteMany({
+            where: {
+              pspListId: id,
+              pspId: { in: pspIdsToRemove },
+            },
+          });
+        }
+
+        // Ajouter les nouveaux PSP
+        const pspIdsToAdd = data.pspIds!.filter(pspId => !currentPspIds.includes(pspId));
+
+        if (pspIdsToAdd.length > 0) {
+          const maxOrder = list.items.length > 0
+            ? Math.max(...list.items.map(item => item.order))
+            : -1;
+
+          await this.prisma.pspListItem.createMany({
+            data: pspIdsToAdd.map((pspId, index) => ({
+              pspListId: id,
+              pspId,
+              order: maxOrder + 1 + index,
+            })),
+          });
+        }
+
+        // Réorganiser l'ordre des PSP restants selon l'ordre dans pspIds
         const remainingItems = await this.prisma.pspListItem.findMany({
           where: {
             pspListId: id,

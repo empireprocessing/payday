@@ -97,11 +97,6 @@ export function PspListManager({ onListSelect, showSelectButton = false }: PspLi
       return
     }
 
-    if (newList.selectedPspIds.length === 0) {
-      toast.error('Veuillez sélectionner au moins un PSP')
-      return
-    }
-
     try {
       const createdList = await apiClient.pspLists.create({
         name: newList.name,
@@ -127,11 +122,6 @@ export function PspListManager({ onListSelect, showSelectButton = false }: PspLi
   const handleEditList = async () => {
     if (!selectedList || !newList.name.trim()) {
       toast.error('Le nom de la liste est requis')
-      return
-    }
-
-    if (newList.selectedPspIds.length === 0) {
-      toast.error('Veuillez sélectionner au moins un PSP')
       return
     }
 

@@ -103,10 +103,6 @@ export class StorePspService {
       .filter(item => item.psp.isActive && !item.psp.deletedAt)
       .map(item => item.psp);
 
-    if (activePsps.length === 0) {
-      throw new Error('La liste ne contient aucun PSP actif');
-    }
-
     // Enregistrer la liste utilisée dans la boutique
     await this.prisma.store.update({
       where: { id: storeId },
