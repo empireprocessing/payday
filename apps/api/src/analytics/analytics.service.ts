@@ -376,7 +376,10 @@ export class AnalyticsService {
    * Métriques par boutique
    */
   async getStoreMetrics(period: 'day' | 'week' | 'month' = 'month', storeIds?: string[], days?: number): Promise<StoreMetric[]> {
-    const startDate = days ? new Date(new Date().getTime() - (days * 24 * 60 * 60 * 1000)) : this.getStartDate(period);
+    const effectiveDays = days !== undefined && days !== null
+      ? days
+      : (period === 'day' ? 1 : period === 'week' ? 7 : 30);
+    const { startDate, endDate } = this.calculateDateRange(effectiveDays, undefined);
 
     // Construire le filtre pour les stores
     const storeFilter = storeIds && storeIds.length > 0 ? { id: { in: storeIds } } : undefined;
@@ -384,9 +387,9 @@ export class AnalyticsService {
     const stores = await this.prisma.store.findMany({
       where: storeFilter,
       include: {
-        orders: {
-          where: { createdAt: { gte: startDate } },
-          select: { id: true, totalAmount: true, paymentStatus: true }
+        payments: {
+          where: { createdAt: { gte: startDate, lte: endDate } },
+          select: { id: true, amount: true, status: true }
         },
         psps: {
           select: { id: true }
@@ -395,11 +398,11 @@ export class AnalyticsService {
     });
 
     return stores.map(store => {
-      const totalOrders = store.orders.length;
-      const successfulOrders = store.orders.filter(o => o.paymentStatus === 'SUCCESS').length;
-      const totalRevenue = store.orders
-        .filter(o => o.paymentStatus === 'SUCCESS')
-        .reduce((sum, o) => sum + o.totalAmount, 0);
+      const totalOrders = store.payments.length;
+      const successfulOrders = store.payments.filter(p => p.status === PaymentStatus.SUCCESS).length;
+      const totalRevenue = store.payments
+        .filter(p => p.status === PaymentStatus.SUCCESS)
+        .reduce((sum, p) => sum + p.amount, 0);
 
       return {
         id: store.id,
@@ -419,10 +422,13 @@ export class AnalyticsService {
    * Métriques par PSP
    */
   async getPspMetrics(period: 'day' | 'week' | 'month' = 'month', storeIds?: string[], days?: number): Promise<PspMetric[]> {
-    const startDate = days ? new Date(new Date().getTime() - (days * 24 * 60 * 60 * 1000)) : this.getStartDate(period);
+    const effectiveDays = days !== undefined && days !== null
+      ? days
+      : (period === 'day' ? 1 : period === 'week' ? 7 : 30);
+    const { startDate, endDate } = this.calculateDateRange(effectiveDays, undefined);
 
     // Construire le filtre pour les paiements
-    const paymentFilter: any = { createdAt: { gte: startDate } };
+    const paymentFilter: any = { createdAt: { gte: startDate, lte: endDate } };
     if (storeIds && storeIds.length > 0) {
       paymentFilter.storeId = { in: storeIds };
     }
@@ -1330,10 +1336,13 @@ export class AnalyticsService {
     totalRevenue: number;
   }>> {
     const sinceBusinessDay = getBusinessDayStartUTC();
-    const startDate = days ? new Date(new Date().getTime() - (days * 24 * 60 * 60 * 1000)) : this.getStartDate(period);
+    const effectiveDays = days !== undefined && days !== null
+      ? days
+      : (period === 'day' ? 1 : period === 'week' ? 7 : 30);
+    const { startDate, endDate } = this.calculateDateRange(effectiveDays, undefined);
 
     // Construire le filtre pour les paiements selon la période
-    const paymentFilter: any = { createdAt: { gte: startDate } };
+    const paymentFilter: any = { createdAt: { gte: startDate, lte: endDate } };
     if (storeIds && storeIds.length > 0) {
       paymentFilter.storeId = { in: storeIds };
     }
@@ -2358,5 +2367,93 @@ export class AnalyticsService {
         lastUpdated: null,
       };
     }
+  }
+
+  /**
+   * Santé des intégrations : Connect, Basis Theory, Cascade stats
+   */
+  async getIntegrationHealth() {
+    // Connect stats
+    const allPsps = await this.prisma.psp.findMany({
+      where: { deletedAt: null, isActive: true },
+      select: {
+        stripeConnectedAccountId: true,
+        stripeConnectStatus: true,
+        stripeChargesEnabled: true,
+      },
+    });
+
+    const connectStats = {
+      total: allPsps.length,
+      active: allPsps.filter(p => !!p.stripeConnectedAccountId && p.stripeChargesEnabled === true).length,
+      pending: allPsps.filter(p => p.stripeConnectStatus === 'pending').length,
+      disconnected: allPsps.filter(p => !p.stripeConnectedAccountId).length,
+      restricted: allPsps.filter(p => p.stripeConnectStatus === 'restricted').length,
+    };
+
+    // Basis Theory check
+    const basisTheoryConfigured = !!process.env.BASIS_THEORY_API_KEY;
+
+    // Cascade stats (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [totalPayments, firstTrySuccess, fallbackSuccess] = await Promise.all([
+      this.prisma.payment.count({
+        where: {
+          createdAt: { gte: thirtyDaysAgo },
+          status: { in: [PaymentStatus.SUCCESS, PaymentStatus.FAILED] },
+        },
+      }),
+      this.prisma.payment.count({
+        where: {
+          createdAt: { gte: thirtyDaysAgo },
+          status: PaymentStatus.SUCCESS,
+          isFallback: false,
+        },
+      }),
+      this.prisma.payment.count({
+        where: {
+          createdAt: { gte: thirtyDaysAgo },
+          status: PaymentStatus.SUCCESS,
+          isFallback: true,
+        },
+      }),
+    ]);
+
+    const totalSuccessful = firstTrySuccess + fallbackSuccess;
+    const cascadeStats = {
+      firstTryRate: totalPayments > 0 ? Math.round((firstTrySuccess / totalPayments) * 1000) / 10 : 0,
+      fallbackRate: totalPayments > 0 ? Math.round((fallbackSuccess / totalPayments) * 1000) / 10 : 0,
+      failRate: totalPayments > 0 ? Math.round(((totalPayments - totalSuccessful) / totalPayments) * 1000) / 10 : 0,
+      totalPayments,
+    };
+
+    return {
+      connect: connectStats,
+      basisTheory: { configured: basisTheoryConfigured },
+      cascade: cascadeStats,
+    };
+  }
+
+  /**
+   * Calcul du payout pour un runner (total revenus sur ses boutiques)
+   */
+  async getRunnerPayout(storeIds: string[], fromDate: Date, toDate: Date) {
+    const result = await this.prisma.payment.aggregate({
+      where: {
+        storeId: { in: storeIds },
+        status: PaymentStatus.SUCCESS,
+        createdAt: { gte: fromDate, lte: toDate },
+      },
+      _sum: { amount: true },
+      _count: true,
+    });
+
+    return {
+      totalRevenue: result._sum.amount || 0,
+      totalPayments: result._count,
+      storeCount: storeIds.length,
+    };
   }
 }

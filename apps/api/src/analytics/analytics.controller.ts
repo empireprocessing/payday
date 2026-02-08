@@ -212,6 +212,25 @@ export class AnalyticsController {
   }
 
   /**
+   * Calcul du payout pour un runner
+   */
+  @Get('runner-payout')
+  async getRunnerPayout(
+    @Query('storeIds') storeIds: string,
+    @Query('fromDate') fromDate: string,
+    @Query('toDate') toDate: string,
+  ) {
+    const storeIdsArray = storeIds ? storeIds.split(',').filter(id => id.trim()) : [];
+    const from = new Date(fromDate);
+    const to = new Date(toDate);
+
+    if (isNaN(from.getTime())) throw new Error(`Invalid fromDate: ${fromDate}`);
+    if (isNaN(to.getTime())) throw new Error(`Invalid toDate: ${toDate}`);
+
+    return this.analyticsService.getRunnerPayout(storeIdsArray, from, to);
+  }
+
+  /**
    * Détails complets d'un PSP avec métriques
    */
   @Get('psp/:id')
@@ -256,5 +275,13 @@ export class AnalyticsController {
   @Get('psp/:id/upcoming-funds')
   async getPspUpcomingFunds(@Param('id') id: string) {
     return this.analyticsService.getPspUpcomingFunds(id);
+  }
+
+  /**
+   * Santé des intégrations (Connect, Basis Theory, Cascade)
+   */
+  @Get('health')
+  async getIntegrationHealth() {
+    return this.analyticsService.getIntegrationHealth();
   }
 }
