@@ -104,11 +104,56 @@ export class PayDomainService {
       if (!cloudflareResult.success && cloudflareResult.error?.includes('Duplicate custom hostname')) {
         console.log(`Domain ${dto.hostname} already exists in Cloudflare, checking existing hostname...`);
         cloudflareAlreadyExists = true;
-        
+
         // Récupérer les infos du hostname existant depuis Cloudflare
         const existingHostnameInfo = await this.externalDomainService.getExistingCloudflareHostname(dto.hostname);
         if (existingHostnameInfo.success) {
-          // Mettre à jour notre record avec l'ID Cloudflare existant
+          // Si le hostname est dans un état cassé (moved, deleted, etc.), le supprimer et recréer
+          const staleStatuses = ['moved', 'deleted', 'test_pending'];
+          if (existingHostnameInfo.status && staleStatuses.includes(existingHostnameInfo.status)) {
+            console.log(`Existing hostname ${dto.hostname} has stale status "${existingHostnameInfo.status}", deleting and recreating...`);
+            await this.externalDomainService.removeFromCloudflare(existingHostnameInfo.customHostnameId!);
+
+            // Recréer le hostname
+            const freshResult = await this.externalDomainService.addToCloudflare(dto.hostname);
+            if (!freshResult.success) {
+              throw new Error(`Erreur de recréation Cloudflare: ${freshResult.error}`);
+            }
+
+            console.log(`Successfully recreated hostname ${dto.hostname} on Cloudflare (ID: ${freshResult.customHostnameId})`);
+
+            await this.prisma.payDomain.update({
+              where: { id: payDomain.id },
+              data: {
+                cloudflareHostnameId: freshResult.customHostnameId,
+                status: 'PENDING'
+              }
+            });
+
+            return {
+              cname: {
+                host: dto.hostname,
+                target: 'checkout.heypay.one',
+              },
+              acmeCname: {
+                host: `_acme-challenge.${dto.hostname}`,
+                target: '_acme-challenge.checkout.heypay.one',
+              },
+              ownershipVerification: freshResult.ownershipVerification ? {
+                name: freshResult.ownershipVerification.name,
+                type: freshResult.ownershipVerification.type,
+                value: freshResult.ownershipVerification.value,
+              } : undefined,
+              sslValidation: freshResult.sslDetails ? {
+                txt_name: freshResult.sslDetails.txt_name,
+                txt_value: freshResult.sslDetails.txt_value,
+                validation_records: freshResult.sslDetails.validation_records,
+              } : undefined,
+              message: 'Domaine recréé sur Cloudflare (ancien hostname obsolète supprimé)'
+            };
+          }
+
+          // Hostname existant et fonctionnel : le réutiliser
           await this.prisma.payDomain.update({
             where: { id: payDomain.id },
             data: {
@@ -116,7 +161,7 @@ export class PayDomainService {
               status: existingHostnameInfo.isActive ? 'ACTIVE' : 'PENDING'
             }
           });
-          
+
           // Retourner les DNS records depuis les infos existantes
           return {
             cname: {
