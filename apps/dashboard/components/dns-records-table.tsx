@@ -3,8 +3,27 @@
 import { useState, useEffect } from "react"
 import { apiClient } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { RefreshCw, Copy, Check, Clock, X } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  RefreshCw,
+  Copy,
+  Check,
+  Clock,
+  XCircle,
+  Shield,
+  Globe,
+  ShieldCheck,
+  AlertTriangle,
+  CheckCircle2,
+} from "lucide-react"
 import { toast } from "sonner"
 
 interface DnsRecord {
@@ -50,38 +69,93 @@ interface DnsRecordsTableProps {
   onStatusChange?: (status: 'PENDING' | 'ACTIVE' | 'FAILED') => void
 }
 
+type OverallStatus = 'active' | 'pending' | 'failed' | 'loading'
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      toast.success('Copie dans le presse-papiers')
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error('Erreur lors de la copie')
+    }
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 shrink-0"
+      onClick={handleCopy}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-green-500" />
+      ) : (
+        <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+      )}
+    </Button>
+  )
+}
+
+function StatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case 'active':
+      return (
+        <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/25 dark:text-emerald-400 gap-1.5">
+          <CheckCircle2 className="h-3 w-3" />
+          Actif
+        </Badge>
+      )
+    case 'pending':
+    case 'pending_validation':
+      return (
+        <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/25 dark:text-amber-400 gap-1.5">
+          <Clock className="h-3 w-3" />
+          En attente
+        </Badge>
+      )
+    default:
+      return (
+        <Badge className="bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400 gap-1.5">
+          <XCircle className="h-3 w-3" />
+          Erreur
+        </Badge>
+      )
+  }
+}
+
+function getOverallStatus(data: DnsRecordsData | null): OverallStatus {
+  if (!data) return 'loading'
+  const hostnameOk = data.status?.hostname === 'active'
+  const sslOk = data.status?.ssl === 'active'
+  const vercelOk = data.vercel?.info?.verified !== false
+  if (hostnameOk && sslOk && vercelOk) return 'active'
+  const hasErrors = data.status?.verificationErrors && data.status.verificationErrors.length > 0
+  if (hasErrors) return 'failed'
+  return 'pending'
+}
+
 export function DnsRecordsTable({ storeId, domainId, onStatusChange }: DnsRecordsTableProps) {
   const [dnsRecords, setDnsRecords] = useState<DnsRecordsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast.success('Copié dans le presse-papiers')
-    } catch (err) {
-      console.error('Failed to copy text: ', err)
-      toast.error('Erreur lors de la copie')
-    }
-  }
-
   const fetchDnsRecords = async () => {
     try {
       setError(null)
-      
-      // Vérifier que les IDs sont valides
       if (!storeId || !domainId) {
         setError('Store ID ou Domain ID manquant')
         setLoading(false)
         return
       }
-      
       const records = await apiClient.payDomains.getDnsRecords(storeId, domainId)
-      console.log('[DnsRecordsTable] Fetched records:', records)
       setDnsRecords(records)
-      
-      // Notifier du changement de statut
       if (onStatusChange && records.status) {
         if (records.status.hostname === 'active' && records.status.ssl === 'active') {
           onStatusChange('ACTIVE')
@@ -92,8 +166,7 @@ export function DnsRecordsTable({ storeId, domainId, onStatusChange }: DnsRecord
         }
       }
     } catch (err) {
-      console.error('Failed to fetch DNS records:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch DNS records')
+      setError(err instanceof Error ? err.message : 'Impossible de charger les enregistrements DNS')
       if (onStatusChange) onStatusChange('FAILED')
     } finally {
       setLoading(false)
@@ -110,60 +183,42 @@ export function DnsRecordsTable({ storeId, domainId, onStatusChange }: DnsRecord
     await fetchDnsRecords()
   }
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <Check className="h-3 w-3 text-green-500" />
-      case 'pending':
-      case 'pending_validation':
-        return <Clock className="h-3 w-3 text-yellow-500" />
-      default:
-        return <X className="h-3 w-3 text-red-500" />
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-        return 'text-green-700'
-      case 'pending':
-      case 'pending_validation':
-        return 'text-yellow-700'
-      default:
-        return 'text-red-700'
-    }
-  }
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-3 p-6">
-        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        <span className="text-sm text-muted-foreground">Chargement des DNS records...</span>
+      <div className="flex flex-col items-center justify-center gap-3 py-12">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-muted-foreground">Chargement des enregistrements DNS...</p>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md">
-        <p className="text-sm text-destructive font-medium">Erreur</p>
-        <p className="text-sm text-muted-foreground mt-1">{error}</p>
-        <Button onClick={handleRefresh} size="sm" variant="outline" className="mt-2">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Réessayer
+      <div className="flex flex-col items-center justify-center gap-4 py-12">
+        <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
+          <XCircle className="h-6 w-6 text-destructive" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-medium text-foreground">Erreur de chargement</p>
+          <p className="text-sm text-muted-foreground mt-1">{error}</p>
+        </div>
+        <Button onClick={handleRefresh} size="sm" variant="outline">
+          <RefreshCw className="h-3.5 w-3.5 mr-2" />
+          Reessayer
         </Button>
       </div>
     )
   }
 
+  const overallStatus = getOverallStatus(dnsRecords)
   const records: DnsRecord[] = []
   if (dnsRecords?.cname) {
     records.push({
       type: dnsRecords.cname.type,
       host: dnsRecords.cname.host,
       target: dnsRecords.cname.target,
-      value: dnsRecords.cname.target, // Pour CNAME, utiliser target comme value
-      description: dnsRecords.cname.description
+      value: dnsRecords.cname.target,
+      description: dnsRecords.cname.description,
     })
   }
   if (dnsRecords?.ownershipVerification) records.push(dnsRecords.ownershipVerification)
@@ -173,233 +228,242 @@ export function DnsRecordsTable({ storeId, domainId, onStatusChange }: DnsRecord
       type: dnsRecords.dcvDelegation.type,
       host: dnsRecords.dcvDelegation.host,
       target: dnsRecords.dcvDelegation.target,
-      value: dnsRecords.dcvDelegation.target, // Pour CNAME, utiliser target comme value
-      description: dnsRecords.dcvDelegation.description
+      value: dnsRecords.dcvDelegation.target,
+      description: dnsRecords.dcvDelegation.description,
     })
   }
 
   return (
-    <div className="space-y-3">
-      {/* Section de refresh */}
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-muted-foreground">
-          DNS records requis (données en temps réel depuis Cloudflare)
-        </p>
+    <div className="space-y-5">
+      {/* Header with overall status + refresh */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {overallStatus === 'active' ? (
+            <div className="w-9 h-9 rounded-full bg-emerald-500/10 flex items-center justify-center">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
+            </div>
+          ) : overallStatus === 'failed' ? (
+            <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            </div>
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-amber-500/10 flex items-center justify-center">
+              <Clock className="h-5 w-5 text-amber-600" />
+            </div>
+          )}
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {overallStatus === 'active' && 'Domaine actif'}
+              {overallStatus === 'pending' && 'Configuration en attente'}
+              {overallStatus === 'failed' && 'Erreur de configuration'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Donnees en temps reel depuis Cloudflare & Vercel
+            </p>
+          </div>
+        </div>
         <Button
           onClick={handleRefresh}
           disabled={refreshing}
           size="sm"
           variant="outline"
         >
-          {refreshing ? (
-            <>
-              <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
-              Actualisation...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="h-3 w-3 mr-2" />
-              Actualiser
-            </>
-          )}
+          <RefreshCw className={`h-3.5 w-3.5 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Actualisation...' : 'Actualiser'}
         </Button>
       </div>
 
-      {/* Statut global */}
-      <div className={`grid gap-3 ${dnsRecords?.status && dnsRecords?.vercel ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
-        {/* Statut Cloudflare */}
-        {dnsRecords?.status && (
-          <Card className="border-primary/20">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Statut Cloudflare</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Domaine :</span>
-                <div className="flex items-center gap-1.5">
-                  {getStatusIcon(dnsRecords.status.hostname)}
-                  <span className={`text-xs font-medium ${getStatusColor(dnsRecords.status.hostname)}`}>
-                    {dnsRecords.status.hostname}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">SSL :</span>
-                <div className="flex items-center gap-1.5">
-                  {getStatusIcon(dnsRecords.status.ssl)}
-                  <span className={`text-xs font-medium ${getStatusColor(dnsRecords.status.ssl)}`}>
-                    {dnsRecords.status.ssl}
-                  </span>
-                </div>
-              </div>
-              
-              {dnsRecords.status.verificationErrors && dnsRecords.status.verificationErrors.length > 0 && (
-                <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-xs">
-                  <p className="font-medium text-destructive mb-1">Erreurs :</p>
-                  <ul className="text-destructive/90 space-y-0.5">
-                    {dnsRecords.status.verificationErrors.map((error, index) => (
-                      <li key={index}>• {error}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+      {/* Status cards row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Cloudflare Hostname */}
+        <div className="rounded-lg border bg-card p-4 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Domaine</span>
+          </div>
+          <div>
+            {dnsRecords?.status ? (
+              <StatusBadge status={dnsRecords.status.hostname} />
+            ) : (
+              <span className="text-xs text-muted-foreground">N/A</span>
+            )}
+          </div>
+        </div>
 
-        {/* Statut Vercel */}
-        {dnsRecords?.vercel && (
-          <Card className="border-primary/20">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Statut Vercel</CardTitle>
-                {dnsRecords.vercel.info && (
-                  <div className="flex items-center gap-1.5">
-                    {getStatusIcon(dnsRecords.vercel.info.verified ? 'active' : 'pending')}
-                    <span className={`text-xs font-medium ${getStatusColor(dnsRecords.vercel.info.verified ? 'active' : 'pending')}`}>
-                      {dnsRecords.vercel.info.verified ? 'Vérifié' : 'En attente'}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {dnsRecords.vercel.config && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Configuration :</span>
-                    <span className="text-xs font-mono font-medium text-foreground">{dnsRecords.vercel.config.configuredBy}</span>
-                    {dnsRecords.vercel.config.misconfigured && (
-                      <span className="text-xs text-destructive font-medium">⚠️ Mal configuré</span>
-                    )}
-                  </div>
+        {/* SSL */}
+        <div className="rounded-lg border bg-card p-4 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">SSL</span>
+          </div>
+          <div>
+            {dnsRecords?.status ? (
+              <StatusBadge status={dnsRecords.status.ssl} />
+            ) : (
+              <span className="text-xs text-muted-foreground">N/A</span>
+            )}
+          </div>
+        </div>
 
-                  {/* DNS recommandés par Vercel */}
-                  {(dnsRecords.vercel.config.recommendedCNAME || dnsRecords.vercel.config.recommendedIPv4) && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-foreground">DNS recommandés :</p>
-                      
-                      {dnsRecords.vercel.config.recommendedCNAME && (
-                        <div className="p-2 bg-muted/50 border border-border rounded">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-xs text-muted-foreground mb-1">CNAME</div>
-                              <div className="font-mono text-xs text-foreground break-all">{dnsRecords.vercel.config.recommendedCNAME}</div>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 flex-shrink-0"
-                              onClick={() => copyToClipboard(dnsRecords.vercel?.config?.recommendedCNAME ?? '')}
-                              title="Copier le CNAME"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {dnsRecords.vercel.config.recommendedIPv4 && dnsRecords.vercel.config.recommendedIPv4.length > 0 && (
-                        <div className="p-2 bg-muted/50 border border-border rounded">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-xs text-muted-foreground mb-1">A Records</div>
-                              <div className="font-mono text-xs text-foreground">
-                                {dnsRecords.vercel.config.recommendedIPv4.map((ip, idx) => (
-                                  <div key={idx}>{ip}</div>
-                                ))}
-                              </div>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 flex-shrink-0"
-                              onClick={() => copyToClipboard(dnsRecords.vercel?.config?.recommendedIPv4?.join('\n') ?? '')}
-                              title="Copier les adresses IP"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* DNS actuels (si disponibles) */}
-                  {(dnsRecords.vercel.config.currentCNAME || dnsRecords.vercel.config.currentA) && (
-                    <div className="p-2 bg-muted/30 border border-border rounded">
-                      <p className="text-xs font-medium text-foreground mb-1">DNS actuels :</p>
-                      <div className="space-y-1 text-xs">
-                        {dnsRecords.vercel.config.currentCNAME && (
-                          <div className="font-mono text-muted-foreground">
-                            <span className="text-foreground">CNAME:</span> {dnsRecords.vercel.config.currentCNAME}
-                          </div>
-                        )}
-                        {dnsRecords.vercel.config.currentA && dnsRecords.vercel.config.currentA.length > 0 && (
-                          <div className="font-mono text-muted-foreground">
-                            <span className="text-foreground">A:</span> {dnsRecords.vercel.config.currentA.join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        {/* Vercel */}
+        <div className="rounded-lg border bg-card p-4 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <svg className="h-4 w-4 text-muted-foreground" viewBox="0 0 76 65" fill="currentColor"><path d="M37.5274 0L75.0548 65H0L37.5274 0Z" /></svg>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Vercel</span>
+          </div>
+          <div>
+            {dnsRecords?.vercel?.info !== undefined ? (
+              <StatusBadge status={dnsRecords.vercel?.info?.verified ? 'active' : 'pending'} />
+            ) : (
+              <span className="text-xs text-muted-foreground">N/A</span>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Table des DNS records */}
-      {records.length > 0 && (
-        <Card className="border-primary/20">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">DNS Records à configurer</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left font-medium text-foreground pb-2 pr-3">Nom</th>
-                    <th className="text-left font-medium text-foreground pb-2 pr-3">Type</th>
-                    <th className="text-left font-medium text-foreground pb-2 pr-4">Valeur</th>
-                    <th className="text-left font-medium text-foreground pb-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((record, index) => (
-                    <tr key={index} className={index < records.length - 1 ? "border-b border-border/50" : ""}>
-                      <td className="text-foreground py-2 pr-3 font-mono" title={record.description}>
-                        {record.host}
-                      </td>
-                      <td className="text-foreground py-2 pr-3">
-                        <span className="px-1.5 py-0.5 bg-muted rounded text-xs font-medium">{record.type}</span>
-                      </td>
-                      <td className="text-foreground py-2 pr-4 font-mono break-all">
-                        {record.value || record.target || '-'}
-                      </td>
-                      <td className="text-foreground py-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => copyToClipboard(record.value || record.target || record.host || '')}
-                          title="Copier la valeur"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* Errors */}
+      {dnsRecords?.status?.verificationErrors && dnsRecords.status.verificationErrors.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-red-800 dark:text-red-400">Erreurs de verification</p>
+              <ul className="mt-1.5 space-y-1">
+                {dnsRecords.status.verificationErrors.map((err, i) => (
+                  <li key={i} className="text-xs text-red-700 dark:text-red-400/80">{err}</li>
+                ))}
+              </ul>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Vercel misconfigured warning */}
+      {dnsRecords?.vercel?.config?.misconfigured && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Configuration Vercel incorrecte</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400/80 mt-1">
+                Le domaine est mal configure sur Vercel. Verifiez les enregistrements DNS ci-dessous.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vercel recommended DNS */}
+      {dnsRecords?.vercel?.config && (dnsRecords.vercel.config.recommendedCNAME || dnsRecords.vercel.config.recommendedIPv4) && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">DNS recommandes par Vercel</h3>
+          <div className="rounded-lg border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="text-xs">Type</TableHead>
+                  <TableHead className="text-xs">Valeur</TableHead>
+                  <TableHead className="text-xs w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dnsRecords.vercel.config.recommendedCNAME && (
+                  <TableRow>
+                    <TableCell>
+                      <Badge variant="secondary" className="font-mono text-[10px]">CNAME</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs text-foreground break-all">
+                        {dnsRecords.vercel.config.recommendedCNAME}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <CopyButton text={dnsRecords.vercel.config.recommendedCNAME} />
+                    </TableCell>
+                  </TableRow>
+                )}
+                {dnsRecords.vercel.config.recommendedIPv4?.map((ip, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell>
+                      <Badge variant="secondary" className="font-mono text-[10px]">A</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs text-foreground">{ip}</span>
+                    </TableCell>
+                    <TableCell>
+                      <CopyButton text={ip} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {/* Current DNS (if available) */}
+      {dnsRecords?.vercel?.config && (dnsRecords.vercel.config.currentCNAME || (dnsRecords.vercel.config.currentA && dnsRecords.vercel.config.currentA.length > 0)) && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">DNS actuellement detectes</h3>
+          <div className="rounded-lg border bg-muted/20 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="text-xs">Type</TableHead>
+                  <TableHead className="text-xs">Valeur actuelle</TableHead>
+                  <TableHead className="text-xs">Attendu</TableHead>
+                  <TableHead className="text-xs w-[50px]">Match</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dnsRecords.vercel.config.currentCNAME && (
+                  <TableRow>
+                    <TableCell>
+                      <Badge variant="secondary" className="font-mono text-[10px]">CNAME</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs">{dnsRecords.vercel.config.currentCNAME}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {dnsRecords.vercel.config.recommendedCNAME || '-'}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {dnsRecords.vercel.config.currentCNAME === dnsRecords.vercel.config.recommendedCNAME ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 inline" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-500 inline" />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {dnsRecords.vercel.config.currentA?.map((ip, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell>
+                      <Badge variant="secondary" className="font-mono text-[10px]">A</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs">{ip}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {dnsRecords.vercel?.config?.recommendedIPv4?.[idx] || '-'}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {dnsRecords.vercel?.config?.recommendedIPv4?.includes(ip) ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 inline" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-500 inline" />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
       )}
     </div>
   )
