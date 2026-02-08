@@ -59,6 +59,22 @@ export class PspController {
   }
 
   /**
+   * Échanger le code OAuth contre le stripe_user_id
+   * POST /psp/stripe-connect/oauth-callback
+   * (Placé avant les routes :id pour éviter les conflits)
+   */
+  @Post('stripe-connect/oauth-callback')
+  async handleOAuthCallback(
+    @Body() body: { code: string; state: string }
+  ) {
+    try {
+      return await this.pspService.handleOAuthCallback(body.code, body.state);
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  /**
    * Lier un PSP à une boutique
    */
   @Post('link')
@@ -141,42 +157,26 @@ export class PspController {
     return this.pspService.restorePSP(id);
   }
 
-  // ── Stripe Connect Onboarding ─────────────────────────────────────
+  // ── Stripe Connect OAuth ─────────────────────────────────────
 
   /**
-   * Créer un compte Express Stripe Connect et retourner l'URL d'onboarding
+   * Générer l'URL OAuth Standard pour connecter un compte Stripe existant
    * POST /psp/:id/stripe-connect/create
    */
   @Post(':id/stripe-connect/create')
   async createStripeConnect(
     @Param('id') id: string,
-    @Body() body: { returnUrl: string }
+    @Body() body: { redirectUri: string }
   ) {
     try {
-      return await this.pspService.createStripeConnectAccount(id, body.returnUrl);
+      return await this.pspService.generateOAuthUrl(id, body.redirectUri);
     } catch (error) {
       throw new BadRequestException(error.message);
     }
   }
 
   /**
-   * Regénérer un lien d'onboarding Stripe Connect (refresh)
-   * POST /psp/:id/stripe-connect/refresh
-   */
-  @Post(':id/stripe-connect/refresh')
-  async refreshStripeConnect(
-    @Param('id') id: string,
-    @Body() body: { returnUrl: string }
-  ) {
-    try {
-      return await this.pspService.refreshStripeConnectLink(id, body.returnUrl);
-    } catch (error) {
-      throw new BadRequestException(error.message);
-    }
-  }
-
-  /**
-   * Vérifier le statut Connect d'un PSP (après retour d'onboarding)
+   * Vérifier le statut Connect d'un PSP
    * GET /psp/:id/stripe-connect/status
    */
   @Get(':id/stripe-connect/status')

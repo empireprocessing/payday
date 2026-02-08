@@ -77,7 +77,7 @@ import {
     getPspPaymentCount,
     restorePsp,
     createStripeConnect,
-    refreshStripeConnect,
+    exchangeOAuthCode,
     getStripeConnectStatus,
 
     // StorePSP
@@ -173,7 +173,7 @@ export const apiClient = {
     restore: restorePsp,
     stripeConnect: {
       create: createStripeConnect,
-      refresh: refreshStripeConnect,
+      exchangeOAuthCode: exchangeOAuthCode,
       getStatus: getStripeConnectStatus,
     },
   },

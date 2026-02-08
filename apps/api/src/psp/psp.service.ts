@@ -435,11 +435,39 @@ export class PspService {
   }
 
   /**
-   * Crée un compte Express Stripe Connect et génère un lien d'onboarding
+   * Génère l'URL OAuth Standard pour connecter un compte Stripe existant
    */
-  async createStripeConnectAccount(pspId: string, dashboardReturnUrl: string): Promise<{
-    accountId: string;
-    onboardingUrl: string;
+  async generateOAuthUrl(pspId: string, redirectUri: string): Promise<{
+    oauthUrl: string;
+  }> {
+    const psp = await this.prisma.psp.findUnique({ where: { id: pspId } })
+    if (!psp) throw new Error('PSP non trouvé')
+    if (psp.stripeConnectedAccountId) {
+      throw new Error('Ce PSP a déjà un compte Stripe Connect associé')
+    }
+
+    const clientId = process.env.STRIPE_CONNECT_CLIENT_ID
+    if (!clientId) throw new Error('STRIPE_CONNECT_CLIENT_ID not configured')
+
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      scope: 'read_write',
+      state: pspId,
+      redirect_uri: redirectUri,
+    })
+
+    const oauthUrl = `https://connect.stripe.com/oauth/authorize?${params.toString()}`
+
+    return { oauthUrl }
+  }
+
+  /**
+   * Échange le code OAuth contre le stripe_user_id et le stocke sur le PSP
+   */
+  async handleOAuthCallback(code: string, pspId: string): Promise<{
+    status: string;
+    stripeConnectedAccountId: string;
   }> {
     const psp = await this.prisma.psp.findUnique({ where: { id: pspId } })
     if (!psp) throw new Error('PSP non trouvé')
@@ -449,61 +477,35 @@ export class PspService {
 
     const stripe = this.getStripeplatform()
 
-    // Créer un compte Express
-    const account = await stripe.accounts.create({
-      type: 'express',
-      capabilities: {
-        card_payments: { requested: true },
-        transfers: { requested: true },
-      },
-      metadata: { psp_id: pspId },
+    // Échanger le code contre le stripe_user_id
+    const response = await stripe.oauth.token({
+      grant_type: 'authorization_code',
+      code,
     })
 
-    // Stocker l'ID du compte
+    const stripeUserId = response.stripe_user_id
+    if (!stripeUserId) {
+      throw new Error('Aucun stripe_user_id reçu de Stripe')
+    }
+
+    // Stocker l'ID du compte connecté
     await this.prisma.psp.update({
       where: { id: pspId },
       data: {
-        stripeConnectedAccountId: account.id,
+        stripeConnectedAccountId: stripeUserId,
         stripeConnectStatus: 'pending',
       },
     })
 
-    // Générer le lien d'onboarding
-    const accountLink = await stripe.accountLinks.create({
-      account: account.id,
-      refresh_url: `${dashboardReturnUrl}?pspId=${pspId}&refresh=true`,
-      return_url: `${dashboardReturnUrl}?pspId=${pspId}&success=true`,
-      type: 'account_onboarding',
-    })
+    // Vérifier immédiatement le statut du compte
+    const statusResult = await this.checkStripeConnectStatus(pspId)
+
+    console.log(`✅ OAuth: PSP ${psp.name} connecté avec ${stripeUserId} → status=${statusResult.status}`)
 
     return {
-      accountId: account.id,
-      onboardingUrl: accountLink.url,
+      status: statusResult.status,
+      stripeConnectedAccountId: stripeUserId,
     }
-  }
-
-  /**
-   * Regénère un lien d'onboarding pour un compte existant (refresh/retry)
-   */
-  async refreshStripeConnectLink(pspId: string, dashboardReturnUrl: string): Promise<{
-    onboardingUrl: string;
-  }> {
-    const psp = await this.prisma.psp.findUnique({ where: { id: pspId } })
-    if (!psp) throw new Error('PSP non trouvé')
-    if (!psp.stripeConnectedAccountId) {
-      throw new Error('Ce PSP n\'a pas de compte Stripe Connect')
-    }
-
-    const stripe = this.getStripeplatform()
-
-    const accountLink = await stripe.accountLinks.create({
-      account: psp.stripeConnectedAccountId,
-      refresh_url: `${dashboardReturnUrl}?pspId=${pspId}&refresh=true`,
-      return_url: `${dashboardReturnUrl}?pspId=${pspId}&success=true`,
-      type: 'account_onboarding',
-    })
-
-    return { onboardingUrl: accountLink.url }
   }
 
   /**

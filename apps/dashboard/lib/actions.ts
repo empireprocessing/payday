@@ -558,18 +558,18 @@ export async function restorePsp(id: string): Promise<PSPWithStoreCount> {
   });
 }
 
-// Stripe Connect
-export async function createStripeConnect(pspId: string, returnUrl: string): Promise<{ accountId: string; onboardingUrl: string }> {
+// Stripe Connect OAuth
+export async function createStripeConnect(pspId: string, redirectUri: string): Promise<{ oauthUrl: string }> {
   return apiRequest(`/psp/${pspId}/stripe-connect/create`, {
     method: 'POST',
-    body: JSON.stringify({ returnUrl }),
+    body: JSON.stringify({ redirectUri }),
   });
 }
 
-export async function refreshStripeConnect(pspId: string, returnUrl: string): Promise<{ onboardingUrl: string }> {
-  return apiRequest(`/psp/${pspId}/stripe-connect/refresh`, {
+export async function exchangeOAuthCode(code: string, pspId: string): Promise<{ status: string; stripeConnectedAccountId: string }> {
+  return apiRequest('/psp/stripe-connect/oauth-callback', {
     method: 'POST',
-    body: JSON.stringify({ returnUrl }),
+    body: JSON.stringify({ code, state: pspId }),
   });
 }
 

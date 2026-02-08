@@ -1,13 +1,29 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PSPTable } from '@/components/psp-table'
 import { PspListManager } from '@/components/psp-list-manager'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 
 export default function PSPPage() {
   const [activeTab, setActiveTab] = useState<"lists" | "psps">("psps")
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    if (searchParams.get('connected') === 'true') {
+      toast.success('Compte Stripe Connect associé avec succès')
+      // Nettoyer l'URL
+      window.history.replaceState({}, '', '/psp')
+    }
+    const connectError = searchParams.get('connect_error')
+    if (connectError) {
+      toast.error(`Erreur Stripe Connect : ${decodeURIComponent(connectError)}`)
+      window.history.replaceState({}, '', '/psp')
+    }
+  }, [searchParams])
 
   return (
     <DashboardLayout>

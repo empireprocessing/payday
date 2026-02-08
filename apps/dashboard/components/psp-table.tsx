@@ -441,27 +441,18 @@ export function PSPTable() {
 
   const handleStripeConnect = async (psp: PSPWithStoreCount) => {
     try {
-      const returnUrl = `${window.location.origin}/psp`
-      let onboardingUrl: string | undefined
-
-      if (psp.stripeConnectedAccountId && psp.stripeConnectStatus === 'pending') {
-        const result = await apiClient.psps.stripeConnect.refresh(psp.id, returnUrl)
-        onboardingUrl = result.onboardingUrl
-      } else if (!psp.stripeConnectedAccountId) {
-        const result = await apiClient.psps.stripeConnect.create(psp.id, returnUrl)
-        onboardingUrl = result.onboardingUrl
+      if (psp.stripeConnectedAccountId) {
+        toast.error('Ce PSP a déjà un compte Stripe Connect associé')
+        return
       }
 
-      if (onboardingUrl) {
-        await navigator.clipboard.writeText(onboardingUrl)
+      const redirectUri = `${window.location.origin}/api/stripe-connect/callback`
+      const result = await apiClient.psps.stripeConnect.create(psp.id, redirectUri)
+
+      if (result.oauthUrl) {
+        await navigator.clipboard.writeText(result.oauthUrl)
         toast.success('Lien OAuth copié dans le presse-papiers')
       }
-
-      // Recharger après un délai pour voir le status
-      setTimeout(async () => {
-        const updatedPsps = await apiClient.psps.getAll()
-        setPsps(updatedPsps)
-      }, 2000)
     } catch (err) {
       const errorMessage = getErrorMessage(err, 'Erreur Stripe Connect')
       toast.error(errorMessage)
@@ -647,21 +638,14 @@ export function PSPTable() {
               try {
                 // Trouver un PSP non connecté pour générer le lien
                 const targetPsp = psps.find(p => p.pspType === 'stripe' && !p.stripeConnectedAccountId && !p.deletedAt)
-                  || psps.find(p => p.pspType === 'stripe' && p.stripeConnectStatus === 'pending' && !p.deletedAt)
                 if (!targetPsp) {
                   toast.error('Aucun PSP Stripe disponible pour la connexion')
                   return
                 }
-                const returnUrl = `${window.location.origin}/psp`
-                const result = targetPsp.stripeConnectedAccountId
-                  ? await apiClient.psps.stripeConnect.refresh(targetPsp.id, returnUrl)
-                  : await apiClient.psps.stripeConnect.create(targetPsp.id, returnUrl)
-                await navigator.clipboard.writeText(result.onboardingUrl)
+                const redirectUri = `${window.location.origin}/api/stripe-connect/callback`
+                const result = await apiClient.psps.stripeConnect.create(targetPsp.id, redirectUri)
+                await navigator.clipboard.writeText(result.oauthUrl)
                 toast.success('Lien OAuth copié dans le presse-papiers')
-                setTimeout(async () => {
-                  const updatedPsps = await apiClient.psps.getAll()
-                  setPsps(updatedPsps)
-                }, 2000)
               } catch (err) {
                 toast.error('Erreur lors de la génération du lien OAuth')
                 console.error('OAuth link error:', err)
