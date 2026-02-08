@@ -52,7 +52,10 @@ import {
     FolderPlus,
     Folder,
     CheckCircle2,
-    XCircle
+    XCircle,
+    Link2,
+    ExternalLink,
+    Copy
 } from "lucide-react"
 
 // Types de PSP disponibles
@@ -436,6 +439,48 @@ export function PSPTable() {
     }
   }
 
+  const handleStripeConnect = async (psp: PSPWithStoreCount) => {
+    try {
+      const returnUrl = `${window.location.origin}/psp`
+      let onboardingUrl: string | undefined
+
+      if (psp.stripeConnectedAccountId && psp.stripeConnectStatus === 'pending') {
+        const result = await apiClient.psps.stripeConnect.refresh(psp.id, returnUrl)
+        onboardingUrl = result.onboardingUrl
+      } else if (!psp.stripeConnectedAccountId) {
+        const result = await apiClient.psps.stripeConnect.create(psp.id, returnUrl)
+        onboardingUrl = result.onboardingUrl
+      }
+
+      if (onboardingUrl) {
+        await navigator.clipboard.writeText(onboardingUrl)
+        toast.success('Lien OAuth copié dans le presse-papiers')
+      }
+
+      // Recharger après un délai pour voir le status
+      setTimeout(async () => {
+        const updatedPsps = await apiClient.psps.getAll()
+        setPsps(updatedPsps)
+      }, 2000)
+    } catch (err) {
+      const errorMessage = getErrorMessage(err, 'Erreur Stripe Connect')
+      toast.error(errorMessage)
+      console.error('Stripe Connect error:', err)
+    }
+  }
+
+  const handleCheckConnectStatus = async (psp: PSPWithStoreCount) => {
+    try {
+      await apiClient.psps.stripeConnect.getStatus(psp.id)
+      const updatedPsps = await apiClient.psps.getAll()
+      setPsps(updatedPsps)
+      toast.success('Statut Connect mis à jour')
+    } catch (err) {
+      const errorMessage = getErrorMessage(err, 'Erreur vérification statut')
+      toast.error(errorMessage)
+    }
+  }
+
   // Affichage du loading
   if (loading) {
     return (
@@ -595,20 +640,53 @@ export function PSPTable() {
           <CardTitle className="text-lg font-semibold">Fournisseurs de Paiement (PSP)</CardTitle>
         </div>
         
-        <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
-          if (open) {
-            setIsAddDialogOpen(true)
-          } else {
-            handleCloseDialog()
-          }
-        }}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              <span className="hidden sm:inline">Ajouter un PSP</span>
-              <span className="sm:hidden">Ajouter</span>
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={async () => {
+              try {
+                // Trouver un PSP non connecté pour générer le lien
+                const targetPsp = psps.find(p => p.pspType === 'stripe' && !p.stripeConnectedAccountId && !p.deletedAt)
+                  || psps.find(p => p.pspType === 'stripe' && p.stripeConnectStatus === 'pending' && !p.deletedAt)
+                if (!targetPsp) {
+                  toast.error('Aucun PSP Stripe disponible pour la connexion')
+                  return
+                }
+                const returnUrl = `${window.location.origin}/psp`
+                const result = targetPsp.stripeConnectedAccountId
+                  ? await apiClient.psps.stripeConnect.refresh(targetPsp.id, returnUrl)
+                  : await apiClient.psps.stripeConnect.create(targetPsp.id, returnUrl)
+                await navigator.clipboard.writeText(result.onboardingUrl)
+                toast.success('Lien OAuth copié dans le presse-papiers')
+                setTimeout(async () => {
+                  const updatedPsps = await apiClient.psps.getAll()
+                  setPsps(updatedPsps)
+                }, 2000)
+              } catch (err) {
+                toast.error('Erreur lors de la génération du lien OAuth')
+                console.error('OAuth link error:', err)
+              }
+            }}
+          >
+            <Copy className="h-4 w-4 mr-2" />
+            <span className="hidden sm:inline">Copier lien OAuth</span>
+            <span className="sm:hidden">OAuth</span>
+          </Button>
+
+          <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+            if (open) {
+              setIsAddDialogOpen(true)
+            } else {
+              handleCloseDialog()
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                <span className="hidden sm:inline">Ajouter un PSP</span>
+                <span className="sm:hidden">Ajouter</span>
+              </Button>
+            </DialogTrigger>
           <DialogContent className="border-primary/20">
             <DialogHeader>
               <DialogTitle>Ajouter un nouveau PSP</DialogTitle>
@@ -755,7 +833,8 @@ export function PSPTable() {
               )}
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
 
         {/* Modal des capacités */}
         <Dialog open={isCapacityDialogOpen} onOpenChange={setIsCapacityDialogOpen}>
@@ -1097,7 +1176,11 @@ export function PSPTable() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {psps.map((psp) => {
+              {[...psps].sort((a, b) => {
+                // Archivés en bas
+                if (!!a.deletedAt !== !!b.deletedAt) return a.deletedAt ? 1 : -1
+                return 0
+              }).map((psp) => {
                 const typeInfo = getPSPTypeInfo(psp.pspType)
                 const isArchived = !!psp.deletedAt
                 return (
@@ -1150,31 +1233,65 @@ export function PSPTable() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div className="flex flex-col gap-1">
-                              <Badge
-                                variant={psp.stripeChargesEnabled !== false ? 'default' : 'destructive'}
-                                className={`text-xs ${psp.stripeChargesEnabled !== false ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : ''}`}
-                              >
-                                {psp.stripeChargesEnabled !== false ? 'Charges' : 'Charges off'}
-                              </Badge>
-                              <Badge
-                                variant={psp.stripePayoutsEnabled !== false ? 'default' : 'destructive'}
-                                className={`text-xs ${psp.stripePayoutsEnabled !== false ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : ''}`}
-                              >
-                                {psp.stripePayoutsEnabled !== false ? 'Payouts' : 'Payouts off'}
-                              </Badge>
+                              {!psp.stripeConnectedAccountId ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs text-red-400 border-red-500/30 bg-red-500/10"
+                                >
+                                  Non connecté
+                                </Badge>
+                              ) : psp.stripeConnectStatus === 'pending' ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs text-yellow-400 bg-yellow-500/10"
+                                >
+                                  En attente
+                                </Badge>
+                              ) : psp.stripeConnectStatus === 'active' ? (
+                                <>
+                                  <Badge
+                                    variant={psp.stripeChargesEnabled !== false ? 'default' : 'destructive'}
+                                    className={`text-xs ${psp.stripeChargesEnabled !== false ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : ''}`}
+                                  >
+                                    {psp.stripeChargesEnabled !== false ? 'Charges' : 'Charges off'}
+                                  </Badge>
+                                  <Badge
+                                    variant={psp.stripePayoutsEnabled !== false ? 'default' : 'destructive'}
+                                    className={`text-xs ${psp.stripePayoutsEnabled !== false ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : ''}`}
+                                  >
+                                    {psp.stripePayoutsEnabled !== false ? 'Payouts' : 'Payouts off'}
+                                  </Badge>
+                                </>
+                              ) : (
+                                <Badge variant="destructive" className="text-xs">
+                                  {psp.stripeConnectStatus || 'Non connecté'}
+                                </Badge>
+                              )}
                             </div>
                           </TooltipTrigger>
                           <TooltipContent>
                             <div className="space-y-1">
-                              <p className={psp.stripeChargesEnabled !== false ? 'text-green-500' : 'text-destructive'}>
-                                Charges: {psp.stripeChargesEnabled !== false ? 'Enabled' : 'Disabled'}
-                              </p>
-                              <p className={psp.stripePayoutsEnabled !== false ? 'text-green-500' : 'text-destructive'}>
-                                Payouts: {psp.stripePayoutsEnabled !== false ? 'Enabled' : 'Disabled'}
-                              </p>
+                              {psp.stripeConnectedAccountId ? (
+                                <>
+                                  <p className="text-xs font-mono">{psp.stripeConnectedAccountId}</p>
+                                  <p className={psp.stripeChargesEnabled !== false ? 'text-green-500' : 'text-destructive'}>
+                                    Charges: {psp.stripeChargesEnabled !== false ? 'Enabled' : 'Disabled'}
+                                  </p>
+                                  <p className={psp.stripePayoutsEnabled !== false ? 'text-green-500' : 'text-destructive'}>
+                                    Payouts: {psp.stripePayoutsEnabled !== false ? 'Enabled' : 'Disabled'}
+                                  </p>
+                                  {psp.stripeConnectOnboardedAt && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Onboarde le: {new Date(psp.stripeConnectOnboardedAt).toLocaleDateString('fr-FR')}
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                <p>Cliquez pour connecter un compte Stripe</p>
+                              )}
                               {psp.lastStripeCheck && (
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  Vérifié: {new Date(psp.lastStripeCheck).toLocaleString('fr-FR')}
+                                  Verifie: {new Date(psp.lastStripeCheck).toLocaleString('fr-FR')}
                                 </p>
                               )}
                             </div>
@@ -1323,6 +1440,22 @@ export function PSPTable() {
                                   <FolderPlus className="h-4 w-4 mr-2" />
                                   Ajouter à une liste
                                 </DropdownMenuItem>
+                                {psp.pspType === 'stripe' && psp.stripeConnectedAccountId && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleCheckConnectStatus(psp)}
+                                  >
+                                    <Link2 className="h-4 w-4 mr-2" />
+                                    Vérifier statut Connect
+                                  </DropdownMenuItem>
+                                )}
+                                {psp.pspType === 'stripe' && !psp.stripeConnectedAccountId && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleStripeConnect(psp)}
+                                  >
+                                    <ExternalLink className="h-4 w-4 mr-2" />
+                                    Connecter Stripe
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   onClick={() => handleToggleSelfieVerification(psp)}
                                 >

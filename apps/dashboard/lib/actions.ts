@@ -26,6 +26,7 @@ import type {
   CreatePspListData,
   UpdatePspListData,
   PaginatedPayments,
+  RunnerPayoutResult,
 } from './types';
 
 // IMPORTANT: Un fichier 'use server' ne peut exporter QUE des fonctions async
@@ -235,6 +236,22 @@ export async function getApprovalRates(
   }
   const queryString = params.toString();
   return apiRequest(`/analytics/approval-rates?${queryString}`);
+}
+
+// Health / Integration Status
+export interface IntegrationHealthResponse {
+  connect: { total: number; active: number; pending: number; disconnected: number; restricted: number };
+  basisTheory: { configured: boolean };
+  cascade: { firstTryRate: number; fallbackRate: number; failRate: number; totalPayments: number };
+}
+
+export async function getIntegrationHealth(): Promise<IntegrationHealthResponse> {
+  return apiRequest('/analytics/health');
+}
+
+export async function getRunnerPayout(storeIds: string[], fromDate: string, toDate: string): Promise<RunnerPayoutResult> {
+  const params = new URLSearchParams({ storeIds: storeIds.join(','), fromDate, toDate });
+  return apiRequest(`/analytics/runner-payout?${params.toString()}`);
 }
 
 export interface PspDetailsResponse {
@@ -539,6 +556,25 @@ export async function restorePsp(id: string): Promise<PSPWithStoreCount> {
   return apiRequest(`/psp/${id}/restore`, {
     method: 'POST',
   });
+}
+
+// Stripe Connect
+export async function createStripeConnect(pspId: string, returnUrl: string): Promise<{ accountId: string; onboardingUrl: string }> {
+  return apiRequest(`/psp/${pspId}/stripe-connect/create`, {
+    method: 'POST',
+    body: JSON.stringify({ returnUrl }),
+  });
+}
+
+export async function refreshStripeConnect(pspId: string, returnUrl: string): Promise<{ onboardingUrl: string }> {
+  return apiRequest(`/psp/${pspId}/stripe-connect/refresh`, {
+    method: 'POST',
+    body: JSON.stringify({ returnUrl }),
+  });
+}
+
+export async function getStripeConnectStatus(pspId: string): Promise<{ status: string; chargesEnabled: boolean; payoutsEnabled: boolean; detailsSubmitted: boolean }> {
+  return apiRequest(`/psp/${pspId}/stripe-connect/status`);
 }
 
 // Server Actions pour StorePSP

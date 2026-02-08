@@ -242,9 +242,12 @@ export interface PSPWithStoreCount {
   isActive: boolean;
   config?: Record<string, unknown> | null;
   connectedStores: number;
-  // Stripe account status
+  // Stripe Connect
+  stripeConnectedAccountId?: string | null;
+  stripeConnectStatus?: string | null;
   stripeChargesEnabled?: boolean;
   stripePayoutsEnabled?: boolean;
+  stripeConnectOnboardedAt?: string | null;
   lastStripeCheck?: string | null;
   selfieVerified?: boolean;
   createdAt: string;
@@ -333,6 +336,12 @@ export interface PaginatedPayments {
   total: number
   page: number
   limit: number
+}
+
+export interface RunnerPayoutResult {
+  totalRevenue: number;
+  totalPayments: number;
+  storeCount: number;
 }
 
 export interface CreatePspListData {

@@ -140,4 +140,51 @@ export class PspController {
   async restorePSP(@Param('id') id: string) {
     return this.pspService.restorePSP(id);
   }
+
+  // ── Stripe Connect Onboarding ─────────────────────────────────────
+
+  /**
+   * Créer un compte Express Stripe Connect et retourner l'URL d'onboarding
+   * POST /psp/:id/stripe-connect/create
+   */
+  @Post(':id/stripe-connect/create')
+  async createStripeConnect(
+    @Param('id') id: string,
+    @Body() body: { returnUrl: string }
+  ) {
+    try {
+      return await this.pspService.createStripeConnectAccount(id, body.returnUrl);
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  /**
+   * Regénérer un lien d'onboarding Stripe Connect (refresh)
+   * POST /psp/:id/stripe-connect/refresh
+   */
+  @Post(':id/stripe-connect/refresh')
+  async refreshStripeConnect(
+    @Param('id') id: string,
+    @Body() body: { returnUrl: string }
+  ) {
+    try {
+      return await this.pspService.refreshStripeConnectLink(id, body.returnUrl);
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  /**
+   * Vérifier le statut Connect d'un PSP (après retour d'onboarding)
+   * GET /psp/:id/stripe-connect/status
+   */
+  @Get(':id/stripe-connect/status')
+  async getStripeConnectStatus(@Param('id') id: string) {
+    try {
+      return await this.pspService.checkStripeConnectStatus(id);
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
 }

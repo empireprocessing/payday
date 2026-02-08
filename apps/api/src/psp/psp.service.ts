@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma.service'
 import { DecryptedStorePSP, CreatePSPDto, UpdatePSPCredentialsDto, PSPWithStoreCount } from './interfaces/psp.interface'
 import { decryptPSPCredentials, encryptPSPCredentials } from '../common/encryption'
 import { getBusinessDayStartUTC } from '../common/business-day'
+import Stripe from 'stripe'
 
 @Injectable()
 export class PspService {
@@ -423,5 +424,177 @@ export class PspService {
         error: 'Erreur lors de la sélection du PSP'
       };
     }
+  }
+
+  // ── Stripe Connect Onboarding ─────────────────────────────────────
+
+  private getStripeplatform(): Stripe {
+    const key = process.env.STRIPE_PLATFORM_SECRET_KEY
+    if (!key) throw new Error('STRIPE_PLATFORM_SECRET_KEY not configured')
+    return new Stripe(key, { typescript: true })
+  }
+
+  /**
+   * Crée un compte Express Stripe Connect et génère un lien d'onboarding
+   */
+  async createStripeConnectAccount(pspId: string, dashboardReturnUrl: string): Promise<{
+    accountId: string;
+    onboardingUrl: string;
+  }> {
+    const psp = await this.prisma.psp.findUnique({ where: { id: pspId } })
+    if (!psp) throw new Error('PSP non trouvé')
+    if (psp.stripeConnectedAccountId) {
+      throw new Error('Ce PSP a déjà un compte Stripe Connect associé')
+    }
+
+    const stripe = this.getStripeplatform()
+
+    // Créer un compte Express
+    const account = await stripe.accounts.create({
+      type: 'express',
+      capabilities: {
+        card_payments: { requested: true },
+        transfers: { requested: true },
+      },
+      metadata: { psp_id: pspId },
+    })
+
+    // Stocker l'ID du compte
+    await this.prisma.psp.update({
+      where: { id: pspId },
+      data: {
+        stripeConnectedAccountId: account.id,
+        stripeConnectStatus: 'pending',
+      },
+    })
+
+    // Générer le lien d'onboarding
+    const accountLink = await stripe.accountLinks.create({
+      account: account.id,
+      refresh_url: `${dashboardReturnUrl}?pspId=${pspId}&refresh=true`,
+      return_url: `${dashboardReturnUrl}?pspId=${pspId}&success=true`,
+      type: 'account_onboarding',
+    })
+
+    return {
+      accountId: account.id,
+      onboardingUrl: accountLink.url,
+    }
+  }
+
+  /**
+   * Regénère un lien d'onboarding pour un compte existant (refresh/retry)
+   */
+  async refreshStripeConnectLink(pspId: string, dashboardReturnUrl: string): Promise<{
+    onboardingUrl: string;
+  }> {
+    const psp = await this.prisma.psp.findUnique({ where: { id: pspId } })
+    if (!psp) throw new Error('PSP non trouvé')
+    if (!psp.stripeConnectedAccountId) {
+      throw new Error('Ce PSP n\'a pas de compte Stripe Connect')
+    }
+
+    const stripe = this.getStripeplatform()
+
+    const accountLink = await stripe.accountLinks.create({
+      account: psp.stripeConnectedAccountId,
+      refresh_url: `${dashboardReturnUrl}?pspId=${pspId}&refresh=true`,
+      return_url: `${dashboardReturnUrl}?pspId=${pspId}&success=true`,
+      type: 'account_onboarding',
+    })
+
+    return { onboardingUrl: accountLink.url }
+  }
+
+  /**
+   * Vérifie le statut d'un compte Connect après retour d'onboarding
+   */
+  async checkStripeConnectStatus(pspId: string): Promise<{
+    status: string;
+    chargesEnabled: boolean;
+    payoutsEnabled: boolean;
+    detailsSubmitted: boolean;
+  }> {
+    const psp = await this.prisma.psp.findUnique({ where: { id: pspId } })
+    if (!psp || !psp.stripeConnectedAccountId) {
+      throw new Error('PSP sans compte Stripe Connect')
+    }
+
+    const stripe = this.getStripeplatform()
+    const account = await stripe.accounts.retrieve(psp.stripeConnectedAccountId)
+
+    const status = account.details_submitted
+      ? (account.charges_enabled ? 'active' : 'restricted')
+      : 'pending'
+
+    await this.prisma.psp.update({
+      where: { id: pspId },
+      data: {
+        stripeConnectStatus: status,
+        stripeChargesEnabled: account.charges_enabled ?? false,
+        stripePayoutsEnabled: account.payouts_enabled ?? false,
+        stripeConnectOnboardedAt: account.details_submitted ? new Date() : undefined,
+        lastStripeCheck: new Date(),
+      },
+    })
+
+    return {
+      status,
+      chargesEnabled: account.charges_enabled ?? false,
+      payoutsEnabled: account.payouts_enabled ?? false,
+      detailsSubmitted: account.details_submitted ?? false,
+    }
+  }
+
+  /**
+   * Met à jour le statut Connect depuis un événement webhook
+   */
+  async handleStripeAccountUpdate(stripeAccountId: string, account: Stripe.Account) {
+    const psp = await this.prisma.psp.findFirst({
+      where: { stripeConnectedAccountId: stripeAccountId },
+    })
+    if (!psp) {
+      console.log(`⚠️ Webhook: aucun PSP trouvé pour le compte ${stripeAccountId}`)
+      return
+    }
+
+    const status = account.details_submitted
+      ? (account.charges_enabled ? 'active' : 'restricted')
+      : 'pending'
+
+    await this.prisma.psp.update({
+      where: { id: psp.id },
+      data: {
+        stripeConnectStatus: status,
+        stripeChargesEnabled: account.charges_enabled ?? false,
+        stripePayoutsEnabled: account.payouts_enabled ?? false,
+        stripeConnectOnboardedAt: account.details_submitted ? new Date() : undefined,
+        lastStripeCheck: new Date(),
+      },
+    })
+
+    console.log(`✅ Webhook: PSP ${psp.name} (${psp.id}) → status=${status}, charges=${account.charges_enabled}`)
+  }
+
+  /**
+   * Gère la déauthorisation d'un compte Connect
+   */
+  async handleStripeAccountDeauthorized(stripeAccountId: string) {
+    const psp = await this.prisma.psp.findFirst({
+      where: { stripeConnectedAccountId: stripeAccountId },
+    })
+    if (!psp) return
+
+    await this.prisma.psp.update({
+      where: { id: psp.id },
+      data: {
+        stripeConnectStatus: 'deauthorized',
+        stripeChargesEnabled: false,
+        stripePayoutsEnabled: false,
+        lastStripeCheck: new Date(),
+      },
+    })
+
+    console.log(`⚠️ Webhook: PSP ${psp.name} déauthorisé`)
   }
 }

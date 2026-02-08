@@ -23,6 +23,7 @@ export type {
   UpdatePspListData,
   PaymentRecord,
   PaginatedPayments,
+  RunnerPayoutResult,
 } from './types';
 
 export type { PspWithUsage } from './actions';
@@ -54,6 +55,8 @@ import {
     getRealtime,
     getPspsWithUsage,
     getApprovalRates,
+    getIntegrationHealth,
+    getRunnerPayout,
 
     // Stores
     getAllStores,
@@ -73,6 +76,9 @@ import {
     hardDeletePsp,
     getPspPaymentCount,
     restorePsp,
+    createStripeConnect,
+    refreshStripeConnect,
+    getStripeConnectStatus,
 
     // StorePSP
     linkStorePsp,
@@ -140,6 +146,8 @@ export const apiClient = {
     getRealtime: getRealtime,
     getPspsWithUsage: (storeIds?: string, period: 'day' | 'week' | 'month' = 'month', days?: number) => getPspsWithUsage(storeIds, period, days),
     getApprovalRates: (storeIds?: string, days?: number, fromDate?: Date, toDate?: Date) => getApprovalRates(storeIds, days, fromDate, toDate),
+    getIntegrationHealth: getIntegrationHealth,
+    getRunnerPayout: (storeIds: string[], fromDate: string, toDate: string) => getRunnerPayout(storeIds, fromDate, toDate),
   },
 
   // Stores endpoints
@@ -163,6 +171,11 @@ export const apiClient = {
     hardDelete: hardDeletePsp,
     getPaymentCount: getPspPaymentCount,
     restore: restorePsp,
+    stripeConnect: {
+      create: createStripeConnect,
+      refresh: refreshStripeConnect,
+      getStatus: getStripeConnectStatus,
+    },
   },
 
   // StorePSP endpoints

@@ -18,9 +18,10 @@ import { WoocommerceModule } from './woocommerce/woocommerce.module';
 import { MetaModule } from './meta/meta.module';
 import { PspListModule } from './psp-list/psp-list.module';
 import { BasisTheoryModule } from './basis-theory/basis-theory.module';
+import { StripeWebhookModule } from './stripe-webhook/stripe-webhook.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), CommonModule, PspModule, PaymentModule, OrderModule, StoreModule, AnalyticsModule, ShopifyModule, RoutingModule, StorePspModule, PayDomainModule, DnsModule, CheckoutModule, WoocommerceModule, MetaModule, PspListModule, BasisTheoryModule],
+  imports: [ScheduleModule.forRoot(), CommonModule, PspModule, PaymentModule, OrderModule, StoreModule, AnalyticsModule, ShopifyModule, RoutingModule, StorePspModule, PayDomainModule, DnsModule, CheckoutModule, WoocommerceModule, MetaModule, PspListModule, BasisTheoryModule, StripeWebhookModule],
   controllers: [AppController],
   providers: [AppService],
 })

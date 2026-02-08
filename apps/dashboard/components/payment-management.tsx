@@ -33,8 +33,14 @@ import {
     TrendingUp,
     DollarSign,
     Plus,
-    X
+    X,
+    AlertTriangle
 } from "lucide-react"
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface PaymentManagementProps {
   storeId: string
@@ -156,6 +162,17 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
       logo: `/${psp.pspType}.png`
     }))
   
+  // Helper pour obtenir le statut Connect d'un PSP
+  const getConnectStatus = (pspId: string) => {
+    const psp = allPsps.find(p => p.id === pspId)
+    if (!psp) return { connected: false, chargesEnabled: false, status: 'unknown' }
+    return {
+      connected: !!psp.stripeConnectedAccountId,
+      chargesEnabled: psp.stripeChargesEnabled === true,
+      status: psp.stripeConnectStatus || 'none',
+    }
+  }
+
   const [pspSearchInput, setPspSearchInput] = useState("")
   const [showPspSuggestions, setShowPspSuggestions] = useState(false)
 
@@ -175,7 +192,13 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
     conversionRate: 0
   }))
   const totalVolume = activePsps.reduce((sum, psp) => sum + psp.totalRevenue, 0)
-  
+
+  // Verifier si des PSPs configures n'ont pas Connect actif
+  const pspsWithoutConnect = activePsps.filter(psp => {
+    const info = getConnectStatus(psp.id)
+    return !info.chargesEnabled
+  })
+  const hasConnectWarning = pspsWithoutConnect.length > 0
 
   // Calculer le total en temps réel pour les PSP actifs seulement
   const totalWeight = activePsps.reduce((sum, psp) => sum + (weights[psp.id] || 0), 0)
@@ -514,6 +537,21 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
         </Card>
       </div>
 
+      {/* Warning Connect */}
+      {hasConnectWarning && (
+        <div className="flex items-start gap-3 p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+          <AlertTriangle className="h-5 w-5 text-orange-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-orange-400">
+              {pspsWithoutConnect.length} PSP sans Stripe Connect actif
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {pspsWithoutConnect.map(p => p.name).join(', ')} — ces PSPs seront ignores lors du traitement des paiements.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* PSP Actifs */}
         <Card>
@@ -540,12 +578,22 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
             ) : (
                               <div className="relative">
                   <div className="max-h-24 overflow-y-auto space-y-3 [mask-image:linear-gradient(to_bottom,black_50%,transparent_100%)]">
-                    {activePsps.map((psp) => (
-                  <div 
+                    {activePsps.map((psp) => {
+                      const connectInfo = getConnectStatus(psp.id)
+                      return (
+                  <div
                     key={psp.id}
-                    className="p-2 rounded-lg border border-border bg-background"
+                    className={`p-2 rounded-lg border border-border bg-background ${!connectInfo.chargesEnabled ? 'opacity-60' : ''}`}
                   >
                     <div className="flex items-center gap-3">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${connectInfo.chargesEnabled ? 'bg-green-500' : connectInfo.connected ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{connectInfo.chargesEnabled ? 'Connect actif' : connectInfo.connected ? 'Connect en attente' : 'Connect non configure'}</p>
+                        </TooltipContent>
+                      </Tooltip>
                       <Image
                         src={`/${psp.pspType}.png`}
                         alt={psp.name}
@@ -556,7 +604,8 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
                       <div className="font-medium text-sm">{psp.name}</div>
                     </div>
                   </div>
-                ))}
+                      )
+                    })}
                   </div>
                 </div>
             )}
@@ -712,10 +761,13 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
                               Répartir équitablement
                             </Button>
                           </div>
-                          {activePsps.map((psp) => (
-                            <div key={psp.id} className="p-4 border rounded-lg space-y-3">
+                          {activePsps.map((psp) => {
+                            const connectInfo = getConnectStatus(psp.id)
+                            return (
+                            <div key={psp.id} className={`p-4 border rounded-lg space-y-3 ${!connectInfo.chargesEnabled ? 'opacity-60 border-orange-500/30' : ''}`}>
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
+                                  <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${connectInfo.chargesEnabled ? 'bg-green-500' : connectInfo.connected ? 'bg-yellow-500' : 'bg-red-500'}`} />
                                   <Image
                                     src={`/${psp.pspType}.png`}
                                     alt={psp.name}
@@ -725,6 +777,9 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
                                   />
                                   <div>
                                     <div className="font-medium">{psp.name}</div>
+                                    {!connectInfo.chargesEnabled && (
+                                      <div className="text-xs text-orange-400">Connect inactif</div>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="text-right">
@@ -748,7 +803,7 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
                                 </div>
                               </div>
                             </div>
-                          ))}
+                          )})}
                         </div>
                       </div>
                     )}
@@ -979,16 +1034,19 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
                       <div className="space-y-3">
                         {fallbackConfig.psps
                           .sort((a, b) => a.order - b.order)
-                          .map((psp, index) => (
-                          <div key={psp.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          .map((psp, index) => {
+                          const fbConnectInfo = getConnectStatus(psp.id)
+                          return (
+                          <div key={psp.id} className={`flex items-center justify-between p-3 border rounded-lg ${!fbConnectInfo.chargesEnabled ? 'border-orange-500/30 opacity-70' : ''}`}>
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-semibold text-orange-400">
                                 {psp.order}
                               </div>
+                              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${fbConnectInfo.chargesEnabled ? 'bg-green-500' : fbConnectInfo.connected ? 'bg-yellow-500' : 'bg-red-500'}`} />
                               <div>
                                 <div className="font-medium">{psp.name}</div>
                                 <div className="text-xs text-muted-foreground">
-                                  Fallback #{psp.order}
+                                  Fallback #{psp.order}{!fbConnectInfo.chargesEnabled ? ' — Connect inactif' : ''}
                                 </div>
                               </div>
                             </div>
@@ -1054,7 +1112,7 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
                               </Button>
                 </div>
                           </div>
-                        ))}
+                        )})}
                       </div>
                     </div>
                   </div>
@@ -1118,17 +1176,20 @@ export function PaymentManagement({ storeId }: PaymentManagementProps) {
             </div>
 
             {fallbackConfig.enabled ? (
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-2 text-sm flex-wrap">
                 {fallbackConfig.psps
                   .sort((a, b) => a.order - b.order)
-                  .map((psp, index) => (
+                  .map((psp, index) => {
+                  const summaryConnect = getConnectStatus(psp.id)
+                  return (
                   <div key={psp.id} className="flex items-center gap-1">
-                    <span className="font-medium">{psp.name}</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${summaryConnect.chargesEnabled ? 'bg-green-500' : 'bg-red-500'}`} />
+                    <span className={`font-medium ${!summaryConnect.chargesEnabled ? 'text-muted-foreground line-through' : ''}`}>{psp.name}</span>
                     {index < fallbackConfig.psps.length - 1 && (
                       <span className="text-muted-foreground">→</span>
                     )}
                   </div>
-                ))}
+                )})}
               </div>
             ) : (
               <div className="text-sm text-muted-foreground">

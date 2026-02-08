@@ -46,6 +46,9 @@ export type PSP = {
   successRate?: number
   avgProcessingTime?: string
   volume24h?: string
+  stripeConnectedAccountId?: string | null
+  stripeConnectStatus?: string | null
+  stripeChargesEnabled?: boolean
 }
 
 interface PSPConfigurationTableProps {
@@ -195,7 +198,10 @@ export function PSPConfigurationTable({ storeId, configuredPspIds, onAddPsp, onR
         name: psp.name,
         displayName: psp.name,
         logo: `/${psp.pspType}.png`,
-        type: isConfigured ? "configured" as const : "available" as const
+        type: isConfigured ? "configured" as const : "available" as const,
+        stripeConnectedAccountId: psp.stripeConnectedAccountId,
+        stripeConnectStatus: psp.stripeConnectStatus,
+        stripeChargesEnabled: psp.stripeChargesEnabled,
       }
     })
 
