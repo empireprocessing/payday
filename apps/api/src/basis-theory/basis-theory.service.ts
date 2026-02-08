@@ -12,6 +12,7 @@ export interface ChargeCardParams {
   customerId?: string;               // Stripe Customer ID on connected account
   description?: string;
   metadata?: Record<string, string>;
+  idempotencyKey?: string;           // Prevents double charges on retries
   shippingData?: {
     name: string;
     address: {
@@ -61,6 +62,7 @@ export interface ChargeSavedCardParams {
   networkTransactionId?: string;
   description?: string;
   metadata?: Record<string, string>;
+  idempotencyKey?: string;
 }
 
 // ── Service ─────────────────────────────────────────────────────────
@@ -120,7 +122,7 @@ export class BasisTheoryService {
     const {
       tokenIntentId, amount, currency,
       stripeSecretKey, stripeConnectedAccountId,
-      customerId, description, metadata, shippingData,
+      customerId, description, metadata, idempotencyKey, shippingData,
     } = params;
 
     this.logger.log(`Charging card via BT proxy -> Connected account ${stripeConnectedAccountId}`);
@@ -180,15 +182,20 @@ export class BasisTheoryService {
       );
 
       // Call Stripe via Basis Theory Proxy with Direct Charge on connected account
+      const headers: Record<string, string> = {
+        'BT-API-KEY': process.env.BASIS_THEORY_API_KEY!,
+        'BT-PROXY-URL': 'https://api.stripe.com/v1/payment_intents',
+        'Authorization': `Bearer ${stripeSecretKey}`,
+        'Stripe-Account': stripeConnectedAccountId,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      };
+      if (idempotencyKey) {
+        headers['Idempotency-Key'] = idempotencyKey;
+      }
+
       const response = await fetch('https://api.basistheory.com/proxy', {
         method: 'POST',
-        headers: {
-          'BT-API-KEY': process.env.BASIS_THEORY_API_KEY!,
-          'BT-PROXY-URL': 'https://api.stripe.com/v1/payment_intents',
-          'Authorization': `Bearer ${stripeSecretKey}`,
-          'Stripe-Account': stripeConnectedAccountId,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers,
         body: formData.toString(),
       });
 
@@ -304,7 +311,7 @@ export class BasisTheoryService {
     const {
       tokenId, amount, currency,
       stripeSecretKey, stripeConnectedAccountId,
-      customerId, networkTransactionId, description, metadata,
+      customerId, networkTransactionId, description, metadata, idempotencyKey,
     } = params;
 
     this.logger.log(`Charging saved card via BT proxy -> Connected account ${stripeConnectedAccountId}`);
@@ -345,6 +352,10 @@ export class BasisTheoryService {
         'payment_method_data[card][exp_year]',
         `{{ token: ${tokenId} | json: "$.data.expiration_date.year" }}`
       );
+      formData.append(
+        'payment_method_data[card][cvc]',
+        `{{ token: ${tokenId} | json: "$.data.cvc" }}`
+      );
 
       // MIT exemption for better approval rates on recurring charges
       if (networkTransactionId) {
@@ -354,15 +365,20 @@ export class BasisTheoryService {
         );
       }
 
+      const savedHeaders: Record<string, string> = {
+        'BT-API-KEY': process.env.BASIS_THEORY_API_KEY!,
+        'BT-PROXY-URL': 'https://api.stripe.com/v1/payment_intents',
+        'Authorization': `Bearer ${stripeSecretKey}`,
+        'Stripe-Account': stripeConnectedAccountId,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      };
+      if (idempotencyKey) {
+        savedHeaders['Idempotency-Key'] = idempotencyKey;
+      }
+
       const response = await fetch('https://api.basistheory.com/proxy', {
         method: 'POST',
-        headers: {
-          'BT-API-KEY': process.env.BASIS_THEORY_API_KEY!,
-          'BT-PROXY-URL': 'https://api.stripe.com/v1/payment_intents',
-          'Authorization': `Bearer ${stripeSecretKey}`,
-          'Stripe-Account': stripeConnectedAccountId,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: savedHeaders,
         body: formData.toString(),
       });
 

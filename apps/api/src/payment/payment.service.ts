@@ -35,6 +35,29 @@ function getShopifyAccessToken(store: any): string | null {
   return null;
 }
 
+// Erreurs Stripe terminales : pas de cascade, retourner l'erreur directement
+const TERMINAL_STRIPE_ERRORS = new Set([
+  'card_declined',
+  'insufficient_funds',
+  'incorrect_cvc',
+  'expired_card',
+  'fraudulent',
+  'stolen_card',
+  'lost_card',
+  'pickup_card',
+  'incorrect_number',
+  'invalid_expiry_month',
+  'invalid_expiry_year',
+  'invalid_cvc',
+  'do_not_honor',
+  'do_not_try_again',
+])
+
+function isTerminalError(stripeErrorCode?: string): boolean {
+  if (!stripeErrorCode) return false
+  return TERMINAL_STRIPE_ERRORS.has(stripeErrorCode)
+}
+
 @Injectable()
 export class PaymentService {
   private readonly DEFAULT_STORE_DOMAIN = 'test-store.com'
@@ -405,7 +428,11 @@ export class PaymentService {
 
   private async getStripeCandidates(storeId: string, amountCents: number, currency: string, excludePspIds: string[] = []) {
     const storePsps = await this.pspService.getStorePSPs(storeId)
-    const candidates = storePsps.filter(sp => sp.psp.pspType === 'stripe' && !excludePspIds.includes(sp.psp.id))
+    const candidates = storePsps.filter(sp =>
+      sp.psp.pspType === 'stripe' &&
+      !excludePspIds.includes(sp.psp.id) &&
+      (sp.psp as any).stripeConnectedAccountId // Exclure les PSP sans compte Connect
+    )
 
     // Convertir le montant en EUR pour la comparaison avec les caps
     const amountEurCents = await this.convertToEUR(amountCents, currency)
@@ -1964,6 +1991,7 @@ export class PaymentService {
               checkout_id: checkoutId,
               store_id: checkout.storeId,
             },
+            idempotencyKey: `${checkoutId}_${attemptNumber}_${selectedPSP.psp.id}`,
             shippingData,
           })
 
@@ -2079,11 +2107,18 @@ export class PaymentService {
             isFallback: attemptNumber > 1,
             processingTimeMs: Date.now() - start,
           })
+          // Erreur terminale (carte refusée, fonds insuffisants, etc.) → pas de cascade
+          if (isTerminalError(btResult.stripeErrorCode)) {
+            console.log(`🛑 Erreur terminale ${btResult.stripeErrorCode} — arrêt cascade`)
+            return { success: false, error: btResult.error || 'Payment declined', stripeErrorCode: btResult.stripeErrorCode }
+          }
+
           attempted.push(selectedPSP.psp.id)
           attemptNumber += 1
           continue
 
         } catch (e) {
+          const stripeCode = (e as any)?.code || (e as any)?.raw?.code || (e as any)?.raw?.decline_code
           console.log(`❌ Erreur PSP ${selectedPSP.psp.name}: ${(e as any)?.message || 'Erreur inconnue'}`)
           await this.recordAttemptRow({
             orderId: null,
@@ -2100,6 +2135,12 @@ export class PaymentService {
             isFallback: attemptNumber > 1,
             processingTimeMs: Date.now() - start,
           })
+
+          if (isTerminalError(stripeCode)) {
+            console.log(`🛑 Erreur terminale ${stripeCode} — arrêt cascade`)
+            return { success: false, error: (e as any)?.message || 'Payment declined', stripeErrorCode: stripeCode }
+          }
+
           attempted.push(selectedPSP.psp.id)
           attemptNumber += 1
           continue

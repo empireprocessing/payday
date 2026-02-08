@@ -40,6 +40,7 @@ export interface PaymentIntentResponse {
   status?: string // PaymentIntent status (succeeded, requires_action, requires_confirmation, etc.)
   attempts?: Array<{ pspId: string; pspType: string; attemptNumber: number; isFallback: boolean }>
   error?: string
+  stripeErrorCode?: string // Code d'erreur Stripe (pour décision frontend)
   cartLimitExceeded?: CartLimitExceeded // Limite de panier dépassée avec suggestions
   // BT + Connect fields
   platformPublishableKey?: string // Clé publique du compte plateforme (pour 3DS handleNextAction)
