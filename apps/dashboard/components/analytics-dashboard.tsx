@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { apiClient, useApiError, formatCurrency } from "@/lib/api-client"
 import type { OverviewMetrics, StoreMetric, PspMetric, TrendData, Store, PspWithUsage, RunnerPayoutResult } from "@/lib/api-client"
@@ -46,7 +46,7 @@ import {
     CreditCard,
     DollarSign, Activity,
     MoreHorizontal, Target,
-    Zap, Gauge, ChevronDown, Banknote
+    Zap, Gauge, ChevronDown, Banknote, Users
 } from "lucide-react"
 import { StoreMultiSelect } from "@/components/store-multi-select"
 import { PeriodSelector, type PeriodType, type PeriodRange } from "@/components/period-selector"
@@ -116,6 +116,7 @@ export function AnalyticsDashboard() {
   const [payoutTo, setPayoutTo] = useState("")
   const [payoutResult, setPayoutResult] = useState<RunnerPayoutResult | null>(null)
   const [payoutLoading, setPayoutLoading] = useState(false)
+  const [filterRunner, setFilterRunner] = useState<string>("all")
 
   const { handleError } = useApiError()
 
@@ -138,6 +139,21 @@ export function AnalyticsDashboard() {
     .filter((r): r is string => !!r && r.trim() !== "")
     .filter((v, i, arr) => arr.indexOf(v) === i)
     .sort()
+
+  // Store IDs effectifs combinant filtre runner + filtre boutiques
+  const effectiveStoreIds = useMemo(() => {
+    let runnerStoreIds: string[] | null = null
+    if (filterRunner !== "all") {
+      runnerStoreIds = stores.filter(s => s.runner === filterRunner).map(s => s.id)
+    }
+    if (selectedStoreIds.length > 0 && runnerStoreIds) {
+      return selectedStoreIds.filter(id => runnerStoreIds!.includes(id))
+    } else if (runnerStoreIds) {
+      return runnerStoreIds
+    } else {
+      return selectedStoreIds
+    }
+  }, [filterRunner, selectedStoreIds, stores])
 
   // Calcul du payout
   const handlePayoutCalculate = async () => {
@@ -204,7 +220,7 @@ export function AnalyticsDashboard() {
         }
         
         // Construire les paramètres de requête
-        const storeIdsParam = selectedStoreIds.length > 0 ? selectedStoreIds.join(',') : undefined
+        const storeIdsParam = effectiveStoreIds.length > 0 ? effectiveStoreIds.join(',') : undefined
         // Toujours passer days pour garantir la cohérence entre getOverview et getTrendData
         const daysParam = days
         
@@ -252,7 +268,7 @@ export function AnalyticsDashboard() {
     }
 
     loadAnalyticsData()
-  }, [selectedPeriod, selectedStoreIds, customRange])
+  }, [selectedPeriod, effectiveStoreIds, customRange])
 
 
   // Fonction pour obtenir la couleur du PSP
@@ -497,6 +513,25 @@ export function AnalyticsDashboard() {
         </Dialog>
 
         <div className="flex-1" />
+
+        {/* Filtre par runner */}
+        {uniqueRunners.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">Runner:</span>
+            <Select value={filterRunner} onValueChange={setFilterRunner}>
+              <SelectTrigger className="w-[160px] glassmorphism border-primary/20">
+                <Users className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous</SelectItem>
+                {uniqueRunners.map(runner => (
+                  <SelectItem key={runner} value={runner}>{runner}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Filtre par stores */}
         <div className="flex items-center gap-2">
@@ -1205,7 +1240,7 @@ export function AnalyticsDashboard() {
                               </p>
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-4">
-                                  <span className="text-xs text-muted-foreground">Commandes</span>
+                                  <span className="text-xs text-muted-foreground">Paiements</span>
                                   <span className="text-sm font-semibold text-white">{store.totalOrders}</span>
                                 </div>
                                 <div className="flex items-center justify-between gap-4">

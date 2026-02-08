@@ -15,13 +15,16 @@ export class PaymentController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
     @Query('storeId') storeId?: string,
+    @Query('storeIds') storeIds?: string,
     @Query('pspId') pspId?: string,
   ) {
+    const storeIdsArray = storeIds ? storeIds.split(',').filter(id => id.trim()) : undefined;
     return this.paymentService.getAllPayments({
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
       status,
       storeId,
+      storeIds: storeIdsArray,
       pspId,
     })
   }

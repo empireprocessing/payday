@@ -276,7 +276,7 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
             <div className="text-3xl font-bold">{formatCurrency(totalRevenue)}</div>
             {dailyRevenue && (
               <p className="text-xs text-muted-foreground mt-1">
-                ~{formatCurrency(dailyRevenue.summary.averageDailyRevenue * 100)}/jour
+                ~{formatCurrency(dailyRevenue.summary.averageDailyRevenue)}/jour
               </p>
             )}
           </CardContent>
@@ -313,7 +313,7 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
             {dailyRevenue.summary.bestDay.date && (
               <div className="text-right">
                 <div className="text-xs text-muted-foreground">Meilleur jour</div>
-                <div className="text-sm font-semibold">{formatCurrency(dailyRevenue.summary.bestDay.revenue * 100)}</div>
+                <div className="text-sm font-semibold">{formatCurrency(dailyRevenue.summary.bestDay.revenue)}</div>
               </div>
             )}
           </CardHeader>
@@ -337,7 +337,7 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
                     axisLine={false}
                   />
                   <YAxis
-                    tickFormatter={(v) => `${v}\u202F\u20AC`}
+                    tickFormatter={(v) => formatCurrency(v)}
                     className="text-xs"
                     stroke="hsl(var(--muted-foreground))"
                     tickLine={false}
@@ -352,7 +352,7 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
                             <p className="text-sm font-medium text-white">
                               {new Date(data.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
                             </p>
-                            <p className="text-lg font-bold text-primary mt-1">{data.revenue.toFixed(2)} €</p>
+                            <p className="text-lg font-bold text-primary mt-1">{formatCurrency(data.revenue)}</p>
                             <p className="text-xs text-muted-foreground mt-1">
                               {data.successfulPayments} paiement{data.successfulPayments > 1 ? 's' : ''}
                             </p>

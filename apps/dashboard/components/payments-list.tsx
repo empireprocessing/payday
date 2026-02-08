@@ -99,12 +99,6 @@ export function PaymentsList() {
     return stores.filter(s => s.runner === filterRunner).map(s => s.id)
   }, [stores, filterRunner])
 
-  // Paiements filtrés par runner côté client
-  const displayedPayments = useMemo(() => {
-    if (!runnerStoreIds) return payments
-    return payments.filter(p => runnerStoreIds.includes(p.store?.id))
-  }, [payments, runnerStoreIds])
-
   const fetchPayments = useCallback(async () => {
     setLoading(true)
     try {
@@ -113,6 +107,7 @@ export function PaymentsList() {
         limit,
         status: filterStatus !== "all" ? filterStatus : undefined,
         storeId: filterStore !== "all" ? filterStore : undefined,
+        storeIds: filterStore === "all" && runnerStoreIds ? runnerStoreIds : undefined,
         pspId: filterPsp !== "all" ? filterPsp : undefined,
       })
       setPayments(result.data)
@@ -122,7 +117,7 @@ export function PaymentsList() {
     } finally {
       setLoading(false)
     }
-  }, [page, limit, filterStatus, filterStore, filterPsp])
+  }, [page, limit, filterStatus, filterStore, filterPsp, runnerStoreIds])
 
   useEffect(() => {
     async function loadFilters() {
@@ -159,7 +154,6 @@ export function PaymentsList() {
     setPage(1)
   }, [filterStatus, filterStore, filterPsp, filterRunner])
 
-  const displayedTotal = runnerStoreIds ? displayedPayments.length : total
   const totalPages = Math.ceil(total / limit)
 
   return (
@@ -249,7 +243,7 @@ export function PaymentsList() {
           <TableBody>
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
-            ) : displayedPayments.length === 0 ? (
+            ) : payments.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                   <Banknote className="h-12 w-12 mx-auto mb-4 opacity-30" />
@@ -257,7 +251,7 @@ export function PaymentsList() {
                 </TableCell>
               </TableRow>
             ) : (
-              displayedPayments.map((payment) => {
+              payments.map((payment) => {
                 const isExpanded = expandedId === payment.id
                 return (
                   <Fragment key={payment.id}>
@@ -346,7 +340,7 @@ export function PaymentsList() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/10">
           <span className="text-sm text-muted-foreground">
-            {displayedTotal} paiement{displayedTotal > 1 ? "s" : ""} — Page {page}/{totalPages}
+            {total} paiement{total > 1 ? "s" : ""} — Page {page}/{totalPages}
           </span>
           <div className="flex gap-2">
             <Button

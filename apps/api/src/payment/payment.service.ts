@@ -86,6 +86,7 @@ export class PaymentService {
     limit?: number
     status?: string
     storeId?: string
+    storeIds?: string[]
     pspId?: string
   }) {
     const page = params?.page || 1
@@ -98,6 +99,8 @@ export class PaymentService {
     }
     if (params?.storeId) {
       where.storeId = params.storeId
+    } else if (params?.storeIds && params.storeIds.length > 0) {
+      where.storeId = { in: params.storeIds }
     }
     if (params?.pspId) {
       where.pspId = params.pspId

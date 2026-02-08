@@ -678,13 +678,14 @@ export async function getOrderById(id: string): Promise<Record<string, unknown>>
 
 // Server Actions pour Payments
 export async function getAllPayments(params?: {
-  page?: number; limit?: number; status?: string; storeId?: string; pspId?: string
+  page?: number; limit?: number; status?: string; storeId?: string; storeIds?: string[]; pspId?: string
 }): Promise<PaginatedPayments> {
   const searchParams = new URLSearchParams()
   if (params?.page) searchParams.append('page', params.page.toString())
   if (params?.limit) searchParams.append('limit', params.limit.toString())
   if (params?.status) searchParams.append('status', params.status)
   if (params?.storeId) searchParams.append('storeId', params.storeId)
+  else if (params?.storeIds && params.storeIds.length > 0) searchParams.append('storeIds', params.storeIds.join(','))
   if (params?.pspId) searchParams.append('pspId', params.pspId)
   const queryString = searchParams.toString()
   return apiRequest(`/payment${queryString ? `?${queryString}` : ''}`);

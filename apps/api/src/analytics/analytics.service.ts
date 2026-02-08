@@ -794,11 +794,12 @@ export class AnalyticsService {
         conversionRate: psp.psp.payments.length > 0 
           ? (psp.psp.payments.filter(p => p.status === PaymentStatus.SUCCESS).length / psp.psp.payments.length) * 100 
           : 0,
-        avgProcessingTime: psp.psp.payments.length > 0
-          ? psp.psp.payments
-              .filter(p => p.processingTimeMs)
-              .reduce((sum, p) => sum + p.processingTimeMs!, 0) / psp.psp.payments.length
-          : undefined
+        avgProcessingTime: (() => {
+          const withTime = psp.psp.payments.filter(p => p.processingTimeMs);
+          return withTime.length > 0
+            ? withTime.reduce((sum, p) => sum + p.processingTimeMs!, 0) / withTime.length
+            : undefined;
+        })()
       })),
       routing: {
         mode: store.routingConfig?.mode || 'AUTOMATIC',
@@ -1067,7 +1068,7 @@ export class AnalyticsService {
 
       existing.total++;
       if (payment.status === PaymentStatus.SUCCESS) {
-        existing.revenue += payment.amount / 100; // Convertir centimes en euros
+        existing.revenue += payment.amount; // Centimes (cohérent avec le reste de l'API)
         existing.successful++;
       }
 
@@ -1078,7 +1079,7 @@ export class AnalyticsService {
     const data = Array.from(dailyData.entries())
       .map(([date, stats]) => ({
         date,
-        revenue: Math.round(stats.revenue * 100) / 100, // Arrondir à 2 décimales
+        revenue: stats.revenue, // Centimes
         successfulPayments: stats.successful,
         totalPayments: stats.total,
       }))
@@ -1086,9 +1087,8 @@ export class AnalyticsService {
 
     // Calculer le résumé
     const totalRevenue = data.reduce((sum, day) => sum + day.revenue, 0);
-    // Moyenne sur les jours avec des paiements uniquement (pas sur toute la période)
-    const daysWithRevenue = data.filter(day => day.revenue > 0).length;
-    const averageDailyRevenue = daysWithRevenue > 0 ? totalRevenue / daysWithRevenue : 0;
+    // Moyenne sur toute la période (pas seulement les jours actifs)
+    const averageDailyRevenue = days > 0 ? totalRevenue / days : 0;
 
     const bestDay = data.reduce((best, current) =>
       current.revenue > best.revenue ? current : best
@@ -1105,8 +1105,8 @@ export class AnalyticsService {
     return {
       data,
       summary: {
-        totalRevenue: Math.round(totalRevenue * 100) / 100,
-        averageDailyRevenue: Math.round(averageDailyRevenue * 100) / 100,
+        totalRevenue,
+        averageDailyRevenue: Math.round(averageDailyRevenue),
         bestDay: { date: bestDay.date, revenue: bestDay.revenue },
         worstDay: { date: worstDay.date, revenue: worstDay.revenue },
       },
