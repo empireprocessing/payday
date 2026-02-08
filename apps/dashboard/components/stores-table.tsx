@@ -726,7 +726,7 @@ export function StoresTable() {
               <span className="sm:hidden">Ajouter</span>
             </Button>
           </DialogTrigger>
-          <DialogContent className={`border-primary/20 ${currentStep === 2 ? '!max-w-2xl' : ''}`}>
+          <DialogContent className={`border-primary/20 max-h-[90vh] flex flex-col ${currentStep === 2 ? '!max-w-2xl' : ''}`}>
             <DialogHeader>
               <DialogTitle>Ajouter une nouvelle boutique</DialogTitle>
 
@@ -756,6 +756,7 @@ export function StoresTable() {
               </div>
             </DialogHeader>
             
+            <div className="overflow-y-auto flex-1 min-h-0">
             {currentStep === 1 ? (
               <div className="grid gap-4 py-4">
                 {/* Sélecteur de plateforme */}
@@ -950,7 +951,8 @@ export function StoresTable() {
                 </div>
               </div>
             )}
-            
+            </div>
+
             <DialogFooter>
               <Button
                 variant="outline"
@@ -1213,14 +1215,7 @@ export function StoresTable() {
                       <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20">
                         <StoreIcon className="h-4 w-4 text-primary" />
                       </div>
-                      <div>
-                        <div className="font-medium">{store.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {store.platform === StorePlatform.SHOPIFY && store.shopifyId
-                            ? `ID: ${store.shopifyId}`
-                            : `${store.platform}`}
-                        </div>
-                      </div>
+                      <div className="font-medium">{store.name}</div>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -1269,7 +1264,12 @@ export function StoresTable() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <span className="text-sm">{store.domain}</span>
-                      <Button variant="ghost" size="icon" className="h-6 w-6">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => window.open(`https://${store.domain}`, '_blank')}
+                      >
                         <ExternalLink className="h-3 w-3" />
                       </Button>
                     </div>
@@ -1488,36 +1488,25 @@ export function StoresTable() {
 
       {/* Dialog de statut du domaine */}
       <Dialog open={isDomainStatusDialogOpen} onOpenChange={setIsDomainStatusDialogOpen}>
-        <DialogContent className="border-primary/20 max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Statut DNS du domaine</DialogTitle>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>Statut DNS</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              Vérification du domaine : <span className="font-mono text-primary">{selectedDomainForStatus}</span>
+              Domaine : <span className="font-mono text-primary">{selectedDomainForStatus}</span>
             </p>
           </DialogHeader>
-          
-          <div className="grid gap-4 py-4">
-            {/* Section de vérification */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                  <Globe className="h-3 w-3 text-primary-foreground" />
-                </div>
-                <p className="text-sm font-medium text-foreground">Vérification DNS</p>
-              </div>
-            </div>
 
-            {/* DNS Records depuis Cloudflare */}
-            <DnsRecordsTable 
+          <div className="flex-1 overflow-y-auto min-h-0 py-4">
+            <DnsRecordsTable
               storeId={selectedStoreIdForStatus}
               domainId={selectedDomainIdForStatus}
               onStatusChange={handleExistingDomainStatusChange}
             />
           </div>
-          
-          <DialogFooter>
-            <Button 
-              variant="outline" 
+
+          <DialogFooter className="flex-shrink-0 border-t pt-4">
+            <Button
+              variant="outline"
               onClick={() => setIsDomainStatusDialogOpen(false)}
             >
               Fermer
