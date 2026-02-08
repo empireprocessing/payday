@@ -23,9 +23,6 @@ importers:
 
   apps/api:
     dependencies:
-      '@basis-theory/node-sdk':
-        specifier: ^5.0.1
-        version: 5.0.1
       '@nestjs/common':
         specifier: ^11.0.1
         version: 11.1.12(class-transformer@0.5.1)(class-validator@0.14.3)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -159,9 +156,6 @@ importers:
       '@radix-ui/react-slot':
         specifier: ^1.2.3
         version: 1.2.4(@types/react@19.2.7)(react@19.2.3)
-      '@stripe/react-stripe-js':
-        specifier: ^3.9.0
-        version: 3.10.0(@stripe/stripe-js@7.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@stripe/stripe-js':
         specifier: ^7.8.0
         version: 7.9.0
@@ -556,10 +550,6 @@ packages:
   '@babel/types@7.28.6':
     resolution: {integrity: sha512-0ZrskXVEHSWIqZM/sQZ4EV3jZJXRkio/WCxaqKZP1g//CEWEPSfeZFcms4XeKBCHU0ZKnIkdJeU/kF+eRp5lBg==}
     engines: {node: '>=6.9.0'}
-
-  '@basis-theory/node-sdk@5.0.1':
-    resolution: {integrity: sha512-LYYmrOmRKh8Xa+AYzi3gnc9zTpZpEJa1TjxwXlJzPHvOP6sYpVsJA7AY7cl/qxUSFMq5xHiy8+9i7TuYIyHCkQ==}
-    engines: {node: '>=18.0.0'}
 
   '@basis-theory/react-elements@2.9.0':
     resolution: {integrity: sha512-ShAN+Ny3IoFmJWBWYes7N+GVytgu36Sl00u7G/z7owR83tefQGiup31ZXV+fc2Q+lzneMyNIsySL0QO723Z/4g==}
@@ -2222,13 +2212,6 @@ packages:
 
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
-
-  '@stripe/react-stripe-js@3.10.0':
-    resolution: {integrity: sha512-UPqHZwMwDzGSax0ZI7XlxR3tZSpgIiZdk3CiwjbTK978phwR/fFXeAXQcN/h8wTAjR4ZIAzdlI9DbOqJhuJdeg==}
-    peerDependencies:
-      '@stripe/stripe-js': '>=1.44.1 <8.0.0'
-      react: '>=16.8.0 <20.0.0'
-      react-dom: '>=16.8.0 <20.0.0'
 
   '@stripe/stripe-js@7.9.0':
     resolution: {integrity: sha512-ggs5k+/0FUJcIgNY08aZTqpBTtbExkJMYMLSMwyucrhtWexVOEY1KJmhBsxf+E/Q15f5rbwBpj+t0t2AW2oCsQ==}
@@ -6372,8 +6355,6 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@basis-theory/node-sdk@5.0.1': {}
-
   '@basis-theory/react-elements@2.9.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
     dependencies:
       '@basis-theory/web-elements': 2.9.0
@@ -7979,13 +7960,6 @@ snapshots:
   '@standard-schema/spec@1.1.0': {}
 
   '@standard-schema/utils@0.3.0': {}
-
-  '@stripe/react-stripe-js@3.10.0(@stripe/stripe-js@7.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
-    dependencies:
-      '@stripe/stripe-js': 7.9.0
-      prop-types: 15.8.1
-      react: 19.2.3
-      react-dom: 19.2.3(react@19.2.3)
 
   '@stripe/stripe-js@7.9.0': {}
 

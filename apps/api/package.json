@@ -24,7 +24,6 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@basis-theory/node-sdk": "^5.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
