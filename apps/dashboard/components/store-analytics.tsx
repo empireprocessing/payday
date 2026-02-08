@@ -1,22 +1,28 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { apiClient, useApiError } from "@/lib/api-client"
+import { apiClient, useApiError, formatCurrency } from "@/lib/api-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Progress } from "@/components/ui/progress"
-import { ArrowLeft, TrendingUp, TrendingDown, Users, CreditCard, DollarSign, Target, BarChart3, Activity } from "lucide-react"
+import {
+  ArrowLeft, Users, CreditCard, DollarSign, Target,
+  Activity, TrendingDown, Zap, CheckCircle2, XCircle
+} from "lucide-react"
 import Link from "next/link"
 import type { StoreAnalytics } from "@/lib/types"
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar,
+  PieChart, Pie, Cell, Label
+} from "recharts"
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartConfig,
+} from "@/components/ui/chart"
 
 interface ConversionFunnel {
-  store: {
-    id: string;
-    name: string;
-    domain: string;
-  };
+  store: { id: string; name: string; domain: string };
   funnel: {
     checkoutsInitiated: number;
     customerInfoProgress: number;
@@ -41,7 +47,6 @@ interface StoreAnalyticsComponentProps {
   storeId: string;
 }
 
-// Mapper period vers nombre de jours
 const periodToDays = (period: 'day' | 'week' | 'month'): number => {
   switch (period) {
     case 'day': return 1;
@@ -50,9 +55,25 @@ const periodToDays = (period: 'day' | 'week' | 'month'): number => {
   }
 }
 
+const periodLabel = (period: 'day' | 'week' | 'month') =>
+  period === 'day' ? '24h' : period === 'week' ? '7 jours' : '30 jours'
+
+const PSP_DONUT_COLORS = [
+  "#635BFF", "#0ABF53", "#0066CC", "#00457C", "#F59E0B",
+  "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
+]
+
+const revenueChartConfig = {
+  revenue: { label: "Revenus", color: "#635BFF" },
+} satisfies ChartConfig
+
+const checkoutsChartConfig = {
+  checkoutsInitiated: { label: "Checkouts", color: "#3b82f6" },
+  paymentSuccessful: { label: "Paiements", color: "#0ABF53" },
+} satisfies ChartConfig
+
 export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProps) {
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('month')
-  // Synchroniser days avec period
   const days = periodToDays(period)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -76,11 +97,9 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
   useEffect(() => {
     const loadAnalytics = async () => {
       if (!storeId) return
-      
       try {
         setLoading(true)
         setError(null)
-        
         const [funnelData, analyticsData, revenueData, approvalData, checkoutsData] = await Promise.all([
           apiClient.analytics.getStoreConversionFunnel(storeId, period),
           apiClient.analytics.getStoreAnalytics(storeId, period),
@@ -88,23 +107,19 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
           apiClient.analytics.getStoreApprovalRate(storeId, period),
           apiClient.analytics.getStoreDailyCheckouts(storeId, days)
         ])
-
         setConversionFunnel(funnelData)
         setStoreAnalytics(analyticsData)
         setDailyRevenue(revenueData)
         setApprovalRate(approvalData)
         setDailyCheckouts(checkoutsData)
       } catch (err) {
-        const errorMessage = handleError(err)
-        setError(errorMessage)
+        setError(handleError(err))
         console.error('Failed to load analytics:', err)
       } finally {
         setLoading(false)
       }
     }
-
     loadAnalytics()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId, period, days])
 
   if (loading) {
@@ -112,54 +127,47 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/boutiques">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="glassmorphism rounded-full">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div className="h-8 w-48 bg-muted/30 rounded animate-pulse"></div>
+          <div className="h-8 w-48 bg-muted/30 rounded animate-pulse" />
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 w-24 bg-muted/30 rounded animate-pulse"></div>
-                <div className="h-4 w-4 bg-muted/30 rounded animate-pulse"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 w-16 bg-muted/30 rounded animate-pulse mb-2"></div>
-                <div className="h-3 w-20 bg-muted/30 rounded animate-pulse"></div>
+            <Card key={i} className="glassmorphism">
+              <CardContent className="pt-6">
+                <div className="h-8 w-16 bg-muted/30 rounded animate-pulse mb-2" />
+                <div className="h-3 w-20 bg-muted/30 rounded animate-pulse" />
               </CardContent>
             </Card>
           ))}
         </div>
+        <Card className="glassmorphism">
+          <CardContent className="pt-6">
+            <div className="h-[280px] bg-muted/20 rounded animate-pulse" />
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
-  if (error) {
+  if (error || !conversionFunnel || !storeAnalytics) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/boutiques">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="glassmorphism rounded-full">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <h1 className="text-2xl font-bold">Analytics</h1>
         </div>
-        
-        <Card>
+        <Card className="glassmorphism">
           <CardContent className="pt-6">
             <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-              <p className="text-destructive font-medium">Erreur de chargement</p>
-              <p className="text-muted-foreground mt-2">{error}</p>
-              <Button 
-                onClick={() => window.location.reload()} 
-                className="mt-4"
-                variant="outline"
-                size="sm"
-              >
+              <p className="text-destructive font-medium">{error || "Aucune donnée disponible"}</p>
+              <Button onClick={() => window.location.reload()} className="mt-4" variant="outline" size="sm">
                 Réessayer
               </Button>
             </div>
@@ -169,44 +177,34 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
     )
   }
 
-  if (!conversionFunnel || !storeAnalytics) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Link href="/boutiques">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">Analytics</h1>
-        </div>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">Aucune donnée disponible</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  const funnelSteps = [
-    { key: 'checkoutsInitiated', label: 'Checkouts initiés', value: conversionFunnel.funnel.checkoutsInitiated },
-    { key: 'customerInfoProgress', label: 'Infos client commencées', value: conversionFunnel.funnel.customerInfoProgress || 0, rate: conversionFunnel.funnel.checkoutsInitiated > 0 ? ((conversionFunnel.funnel.customerInfoProgress || 0) / conversionFunnel.funnel.checkoutsInitiated) * 100 : 0 },
-    { key: 'customerInfoEntered', label: 'Infos client saisies', value: conversionFunnel.funnel.customerInfoEntered, rate: conversionFunnel.conversionRates.customerInfoRate },
-    { key: 'paymentInfoStarted', label: 'Paiement commencé', value: conversionFunnel.funnel.paymentInfoStarted, rate: conversionFunnel.conversionRates.paymentStartRate },
-    { key: 'paymentInfoCompleted', label: 'Paiement complété', value: conversionFunnel.funnel.paymentInfoCompleted, rate: conversionFunnel.conversionRates.paymentCompleteRate },
-    { key: 'payButtonClicked', label: 'Bouton payé cliqué', value: conversionFunnel.funnel.payButtonClicked, rate: conversionFunnel.conversionRates.payButtonRate },
-    { key: 'paymentAttempted', label: 'Paiement tenté', value: conversionFunnel.funnel.paymentAttempted, rate: conversionFunnel.conversionRates.paymentAttemptRate },
-    { key: 'paymentSuccessful', label: 'Paiement réussi', value: conversionFunnel.funnel.paymentSuccessful, rate: conversionFunnel.conversionRates.finalConversionRate },
-  ]
-
   const totalRevenue = storeAnalytics.psps.reduce((sum, psp) => sum + psp.totalRevenue, 0)
   const successfulPayments = storeAnalytics.psps.reduce((sum, psp) => sum + psp.successfulPayments, 0)
-  // Taux de conversion global : checkouts initiés / paiements réussis
-  const overallConversionRate = conversionFunnel.funnel.checkoutsInitiated > 0 
-    ? (successfulPayments / conversionFunnel.funnel.checkoutsInitiated) * 100 
+  const overallConversionRate = conversionFunnel.funnel.checkoutsInitiated > 0
+    ? (successfulPayments / conversionFunnel.funnel.checkoutsInitiated) * 100
     : 0
+  const globalAR = approvalRate ? approvalRate.global.approvalRate : 0
+
+  // Funnel simplifié : 4 étapes clés
+  const funnelSimple = [
+    { label: "Checkouts", value: conversionFunnel.funnel.checkoutsInitiated, color: "#3b82f6" },
+    { label: "Infos saisies", value: conversionFunnel.funnel.customerInfoEntered, color: "#8b5cf6" },
+    { label: "Paiement tenté", value: conversionFunnel.funnel.paymentAttempted, color: "#f59e0b" },
+    { label: "Paiement réussi", value: conversionFunnel.funnel.paymentSuccessful, color: "#0ABF53" },
+  ]
+  const funnelMax = funnelSimple[0].value || 1
+
+  // PSP donut data
+  const pspDonutData = storeAnalytics.psps
+    .filter(psp => psp.totalRevenue > 0)
+    .sort((a, b) => b.totalRevenue - a.totalRevenue)
+    .map((psp, i) => ({
+      name: psp.name,
+      value: psp.totalRevenue,
+      totalPayments: psp.totalPayments,
+      successfulPayments: psp.successfulPayments,
+      ar: psp.totalPayments > 0 ? (psp.successfulPayments / psp.totalPayments * 100) : 0,
+      color: PSP_DONUT_COLORS[i % PSP_DONUT_COLORS.length],
+    }))
 
   return (
     <div className="space-y-6">
@@ -214,18 +212,17 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/boutiques">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="glassmorphism rounded-full">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">Analytics - {conversionFunnel.store.name}</h1>
-            <p className="text-muted-foreground">{conversionFunnel.store.domain}</p>
+            <h1 className="text-3xl font-bold gradient-text">{conversionFunnel.store.name}</h1>
+            <p className="text-muted-foreground text-sm">{conversionFunnel.store.domain}</p>
           </div>
         </div>
-        
-        <Select value={period} onValueChange={(value: 'day' | 'week' | 'month') => setPeriod(value)}>
-          <SelectTrigger className="w-32">
+        <Select value={period} onValueChange={(v: 'day' | 'week' | 'month') => setPeriod(v)}>
+          <SelectTrigger className="w-32 glassmorphism">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -236,124 +233,128 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
         </Select>
       </div>
 
-      {/* Métriques principales */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Checkouts initiés</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{conversionFunnel.funnel.checkoutsInitiated.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              Total sur {period === 'day' ? '24h' : period === 'week' ? '7 jours' : '30 jours'}
-            </p>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="glassmorphism glow-subtle hover:scale-105 transition-all duration-300 group">
+          <CardContent className="pt-5 pb-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-blue-500/20 group-hover:scale-110 transition-transform">
+                <Users className="h-4 w-4 text-blue-400" />
+              </div>
+              <span className="text-sm text-muted-foreground">Checkouts</span>
+            </div>
+            <div className="text-3xl font-bold">{conversionFunnel.funnel.checkoutsInitiated.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground mt-1">{periodLabel(period)}</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Paiements réussis</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{successfulPayments.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              {overallConversionRate.toFixed(1)}% de taux de conversion
-            </p>
+        <Card className="glassmorphism glow-subtle hover:scale-105 transition-all duration-300 group">
+          <CardContent className="pt-5 pb-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-green-500/20 group-hover:scale-110 transition-transform">
+                <CreditCard className="h-4 w-4 text-green-400" />
+              </div>
+              <span className="text-sm text-muted-foreground">Paiements</span>
+            </div>
+            <div className="text-3xl font-bold">{successfulPayments.toLocaleString()}</div>
+            <div className="flex items-center gap-1 mt-1">
+              <span className={`text-xs font-medium ${overallConversionRate >= 5 ? 'text-green-400' : 'text-yellow-400'}`}>
+                {overallConversionRate.toFixed(1)}% conversion
+              </span>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Revenus totaux</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{(totalRevenue / 100).toFixed(2)} €</div>
-            <p className="text-xs text-muted-foreground">
-              {successfulPayments.toLocaleString()} paiements validés
-            </p>
+        <Card className="glassmorphism glow-subtle hover:scale-105 transition-all duration-300 group">
+          <CardContent className="pt-5 pb-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-yellow-500/20 group-hover:scale-110 transition-transform">
+                <DollarSign className="h-4 w-4 text-yellow-400" />
+              </div>
+              <span className="text-sm text-muted-foreground">Revenus</span>
+            </div>
+            <div className="text-3xl font-bold">{formatCurrency(totalRevenue)}</div>
+            {dailyRevenue && (
+              <p className="text-xs text-muted-foreground mt-1">
+                ~{formatCurrency(dailyRevenue.summary.averageDailyRevenue * 100)}/jour
+              </p>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">PSP actifs</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{storeAnalytics.store.activePsps}</div>
-            <p className="text-xs text-muted-foreground">
-              Configurés pour cette boutique
+        <Card className="glassmorphism glow-subtle hover:scale-105 transition-all duration-300 group">
+          <CardContent className="pt-5 pb-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-purple-500/20 group-hover:scale-110 transition-transform">
+                <Target className="h-4 w-4 text-purple-400" />
+              </div>
+              <span className="text-sm text-muted-foreground">Approval Rate</span>
+            </div>
+            <div className={`text-3xl font-bold ${globalAR >= 70 ? 'text-green-400' : globalAR >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+              {globalAR.toFixed(1)}%
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {approvalRate ? `${approvalRate.global.successfulPayments}/${approvalRate.global.totalPayments}` : '-'}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Graphique des revenus quotidiens */}
-      {dailyRevenue && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
-              Revenus quotidiens
-              <span className="text-sm font-normal text-muted-foreground">
-                ({period === 'day' ? '24h' : period === 'week' ? '7 jours' : '30 jours'})
-              </span>
-            </CardTitle>
+      {/* Revenue Chart */}
+      {dailyRevenue && dailyRevenue.data.length > 0 && (
+        <Card className="glassmorphism glow-subtle">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20">
+                <Activity className="h-4 w-4 text-primary" />
+              </div>
+              <CardTitle className="text-lg font-semibold">Revenus quotidiens</CardTitle>
+            </div>
+            {dailyRevenue.summary.bestDay.date && (
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">Meilleur jour</div>
+                <div className="text-sm font-semibold">{formatCurrency(dailyRevenue.summary.bestDay.revenue * 100)}</div>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Total</p>
-                <p className="text-2xl font-bold">{dailyRevenue.summary.totalRevenue.toFixed(2)} €</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Moyenne/jour</p>
-                <p className="text-2xl font-bold">{dailyRevenue.summary.averageDailyRevenue.toFixed(2)} €</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Meilleur jour</p>
-                <p className="text-xl font-bold">{dailyRevenue.summary.bestDay.revenue.toFixed(2)} €</p>
-                <p className="text-xs text-muted-foreground">{new Date(dailyRevenue.summary.bestDay.date).toLocaleDateString('fr-FR')}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Jour le plus faible</p>
-                <p className="text-xl font-bold">{dailyRevenue.summary.worstDay.revenue.toFixed(2)} €</p>
-                <p className="text-xs text-muted-foreground">{new Date(dailyRevenue.summary.worstDay.date).toLocaleDateString('fr-FR')}</p>
-              </div>
-            </div>
-
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={dailyRevenue.data}>
+            <div className="h-[280px]">
+              <ChartContainer config={revenueChartConfig} className="h-full w-full">
+                <AreaChart data={dailyRevenue.data} margin={{ top: 5, right: 5, bottom: 0, left: 5 }}>
                   <defs>
-                    <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                    <linearGradient id="storeRevenueGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#635BFF" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#635BFF" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-white/10" />
                   <XAxis
                     dataKey="date"
-                    tickFormatter={(date) => new Date(date).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' })}
+                    tickFormatter={(d) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
                     className="text-xs"
+                    stroke="hsl(var(--muted-foreground))"
+                    tickLine={false}
+                    axisLine={false}
                   />
                   <YAxis
-                    tickFormatter={(value) => `${value}€`}
+                    tickFormatter={(v) => `${v}\u202F\u20AC`}
                     className="text-xs"
+                    stroke="hsl(var(--muted-foreground))"
+                    tickLine={false}
+                    axisLine={false}
                   />
-                  <Tooltip
+                  <ChartTooltip
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
                         const data = payload[0].payload
                         return (
-                          <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
-                            <p className="font-medium">{new Date(data.date).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                          <div className="glassmorphism border border-primary/20 rounded-lg p-3 shadow-lg">
+                            <p className="text-sm font-medium text-white">
+                              {new Date(data.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+                            </p>
                             <p className="text-lg font-bold text-primary mt-1">{data.revenue.toFixed(2)} €</p>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {data.successfulPayments} paiement{data.successfulPayments > 1 ? 's' : ''} réussi{data.successfulPayments > 1 ? 's' : ''}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {data.successfulPayments} paiement{data.successfulPayments > 1 ? 's' : ''}
                             </p>
                           </div>
                         )
@@ -364,273 +365,297 @@ export function StoreAnalyticsComponent({ storeId }: StoreAnalyticsComponentProp
                   <Area
                     type="monotone"
                     dataKey="revenue"
-                    stroke="#8b5cf6"
-                    strokeWidth={3}
-                    fill="url(#revenueGradient)"
-                    fillOpacity={1}
+                    stroke="#635BFF"
+                    strokeWidth={2}
+                    fill="url(#storeRevenueGradient)"
                   />
                 </AreaChart>
-              </ResponsiveContainer>
+              </ChartContainer>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Graphique des checkouts quotidiens */}
-      {dailyCheckouts && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Checkouts quotidiens
-              <span className="text-sm font-normal text-muted-foreground">
-                ({period === 'day' ? '24h' : period === 'week' ? '7 jours' : '30 jours'})
-              </span>
-            </CardTitle>
+      {/* Row: Funnel + PSP Breakdown */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Conversion Funnel */}
+        <Card className="glassmorphism glow-subtle">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-500/20">
+                <TrendingDown className="h-4 w-4 text-blue-400" />
+              </div>
+              <CardTitle className="text-lg font-semibold">Funnel</CardTitle>
+            </div>
+            <span className="text-xs text-muted-foreground">{periodLabel(period)}</span>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Total</p>
-                <p className="text-2xl font-bold">{dailyCheckouts.summary.totalCheckouts.toLocaleString()}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Moyenne/jour</p>
-                <p className="text-2xl font-bold">{dailyCheckouts.summary.averageDailyCheckouts.toLocaleString()}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Meilleur jour</p>
-                <p className="text-xl font-bold">{dailyCheckouts.summary.bestDay.checkouts.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">{dailyCheckouts.summary.bestDay.date ? new Date(dailyCheckouts.summary.bestDay.date).toLocaleDateString('fr-FR') : '-'}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Jour le plus faible</p>
-                <p className="text-xl font-bold">{dailyCheckouts.summary.worstDay.checkouts.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">{dailyCheckouts.summary.worstDay.date ? new Date(dailyCheckouts.summary.worstDay.date).toLocaleDateString('fr-FR') : '-'}</p>
-              </div>
-            </div>
-
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={dailyCheckouts.data}>
-                  <defs>
-                    <linearGradient id="checkoutsGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(date) => new Date(date).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' })}
-                    className="text-xs"
-                  />
-                  <YAxis className="text-xs" />
-                  <Tooltip
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
-                        const data = payload[0].payload
-                        return (
-                          <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
-                            <p className="font-medium">{new Date(data.date).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                            <p className="text-lg font-bold text-blue-500 mt-1">{data.checkoutsInitiated} checkouts</p>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {data.customerInfoEntered} infos client • {data.paymentSuccessful} paiement{data.paymentSuccessful > 1 ? 's' : ''} réussi{data.paymentSuccessful > 1 ? 's' : ''}
-                            </p>
-                          </div>
-                        )
-                      }
-                      return null
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="checkoutsInitiated"
-                    stroke="#3b82f6"
-                    strokeWidth={3}
-                    fill="url(#checkoutsGradient)"
-                    fillOpacity={1}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Approval Rate */}
-      {approvalRate && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="h-5 w-5" />
-              Taux d&apos;approbation (Approval Rate)
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Pourcentage de paiements réussis sur le total des paiements tentés
-            </p>
-          </CardHeader>
-          <CardContent>
-            {/* Global Approval Rate */}
-            <div className="mb-6 p-4 bg-muted/30 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold">Global</h3>
-                <div className="text-right">
-                  <div className="text-3xl font-bold text-primary">
-                    {approvalRate.global.approvalRate.toFixed(1)}%
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {approvalRate.global.successfulPayments} / {approvalRate.global.totalPayments} paiements
-                  </p>
-                </div>
-              </div>
-              <Progress value={approvalRate.global.approvalRate} className="h-2" />
-              <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-                <span>Réussis: {approvalRate.global.successfulPayments}</span>
-                <span>Échoués: {approvalRate.global.failedPayments}</span>
-              </div>
-            </div>
-
-            {/* Par PSP */}
             <div className="space-y-4">
-              <h3 className="font-semibold text-sm">Par processeur de paiement</h3>
-              {approvalRate.byPsp.map((psp) => (
-                <div key={psp.pspId} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="font-medium">{psp.pspName}</div>
-                      <span className="text-xs text-muted-foreground">
-                        ({psp.totalPayments} paiement{psp.totalPayments > 1 ? 's' : ''})
-                      </span>
+              {funnelSimple.map((step, i) => {
+                const widthPct = funnelMax > 0 ? (step.value / funnelMax) * 100 : 0
+                const dropRate = i > 0 && funnelSimple[i - 1].value > 0
+                  ? ((funnelSimple[i - 1].value - step.value) / funnelSimple[i - 1].value * 100)
+                  : 0
+                return (
+                  <div key={step.label}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-sm font-medium">{step.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold">{step.value.toLocaleString()}</span>
+                        {i > 0 && dropRate > 0 && (
+                          <span className="text-xs text-red-400">-{dropRate.toFixed(0)}%</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-lg font-bold ${
-                        psp.approvalRate >= 85 ? 'text-green-600' :
-                        psp.approvalRate >= 70 ? 'text-green-500' :
-                        psp.approvalRate >= 60 ? 'text-orange-500' :
-                        psp.approvalRate >= 50 ? 'text-orange-400' :
-                        'text-red-600'
-                      }`}>
-                        {psp.approvalRate.toFixed(1)}%
-                      </span>
+                    <div className="h-3 bg-white/5 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${widthPct}%`, backgroundColor: step.color }}
+                      />
                     </div>
                   </div>
-                  <Progress
-                    value={psp.approvalRate}
-                    className={`h-2 ${
-                      psp.approvalRate >= 85 ? '[&>div]:bg-green-600' :
-                      psp.approvalRate >= 70 ? '[&>div]:bg-green-500' :
-                      psp.approvalRate >= 60 ? '[&>div]:bg-orange-500' :
-                      psp.approvalRate >= 50 ? '[&>div]:bg-orange-400' :
-                      '[&>div]:bg-red-600'
-                    }`}
-                  />
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Réussis: {psp.successfulPayments}</span>
-                    <span>Échoués: {psp.failedPayments}</span>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
+            </div>
+            <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Taux de conversion final</span>
+              <span className={`text-lg font-bold ${overallConversionRate >= 5 ? 'text-green-400' : overallConversionRate >= 2 ? 'text-yellow-400' : 'text-red-400'}`}>
+                {overallConversionRate.toFixed(1)}%
+              </span>
             </div>
           </CardContent>
         </Card>
-      )}
 
-      {/* Funnel de conversion */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            Funnel de conversion
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {funnelSteps.map((step, index) => (
-              <div key={step.key} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/20 text-primary text-xs font-medium">
-                      {index + 1}
-                    </div>
-                    <span className="font-medium">{step.label}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-mono">{step.value.toLocaleString()}</span>
-                    {step.rate !== undefined && (
-                      <div className="flex items-center gap-1">
-                        {step.rate > 50 ? (
-                          <TrendingUp className="h-3 w-3 text-green-500" />
-                        ) : (
-                          <TrendingDown className="h-3 w-3 text-red-500" />
-                        )}
-                        <span className="text-xs text-muted-foreground">{step.rate.toFixed(1)}%</span>
+        {/* PSP Breakdown */}
+        <Card className="glassmorphism glow-subtle">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-purple-500/20">
+                <Zap className="h-4 w-4 text-purple-400" />
+              </div>
+              <CardTitle className="text-lg font-semibold">Répartition PSP</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {pspDonutData.length === 0 ? (
+              <div className="flex items-center justify-center h-[240px] text-muted-foreground text-sm">
+                Aucune donnée
+              </div>
+            ) : (
+              <div className="flex items-center gap-6">
+                <div className="shrink-0 w-[160px] h-[160px]">
+                  <PieChart width={160} height={160}>
+                    <Pie
+                      data={pspDonutData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={42}
+                      outerRadius={70}
+                      paddingAngle={2}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {pspDonutData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                      <Label
+                        content={({ viewBox }) => {
+                          if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                            return (
+                              <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                                <tspan x={viewBox.cx} y={viewBox.cy} className="fill-white text-xs font-bold">
+                                  {formatCurrency(totalRevenue)}
+                                </tspan>
+                              </text>
+                            )
+                          }
+                        }}
+                      />
+                    </Pie>
+                    <ChartTooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload
+                          const pct = totalRevenue > 0 ? ((data.value / totalRevenue) * 100).toFixed(1) : '0'
+                          return (
+                            <div className="glassmorphism border border-primary/20 rounded-lg p-3 shadow-lg">
+                              <p className="text-sm font-medium text-white mb-1">{data.name}</p>
+                              <div className="space-y-0.5 text-xs">
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-muted-foreground">Revenus</span>
+                                  <span className="font-semibold text-white">{formatCurrency(data.value)}</span>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-muted-foreground">Part</span>
+                                  <span className="font-semibold text-white">{pct}%</span>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-muted-foreground">AR</span>
+                                  <span className={`font-semibold ${data.ar >= 70 ? 'text-green-400' : data.ar >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                    {data.ar.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        }
+                        return null
+                      }}
+                    />
+                  </PieChart>
+                </div>
+                <div className="flex-1 space-y-3 min-w-0">
+                  {pspDonutData.map((psp, i) => {
+                    const pct = totalRevenue > 0 ? ((psp.value / totalRevenue) * 100).toFixed(1) : '0'
+                    return (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: psp.color }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-white truncate">{psp.name}</span>
+                            <span className="text-sm font-semibold text-white shrink-0 ml-2">{formatCurrency(psp.value)}</span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="text-xs text-muted-foreground">{pct}%</span>
+                            <span className="text-xs text-muted-foreground">{psp.totalPayments} tx</span>
+                            <span className={`text-xs font-medium ${psp.ar >= 70 ? 'text-green-400' : psp.ar >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                              AR {psp.ar.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-                {step.rate !== undefined && (
-                  <Progress value={step.rate} className="h-2" />
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Performance des PSP */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
-            Performance des PSP
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {storeAnalytics.psps.map((psp) => (
-              <div key={psp.id} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/20">
-                    <CreditCard className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <div className="font-medium">{psp.name}</div>
-                    <div className="text-sm text-muted-foreground">{psp.pspType}</div>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-6">
-                  <div className="text-right">
-                    <div className="font-medium">{psp.totalPayments.toLocaleString()}</div>
-                    <div className="text-sm text-muted-foreground">Paiements</div>
-                  </div>
-                  
-                  <div className="text-right">
-                    <div className="font-medium">{(psp.totalRevenue / 100).toFixed(2)} €</div>
-                    <div className="text-sm text-muted-foreground">Revenus</div>
-                  </div>
-                  
-                  <div className="text-right">
-                    <div className="font-medium">{psp.totalPayments > 0 ? (psp.successfulPayments / psp.totalPayments * 100).toFixed(1) : '0.0'}%</div>
-                    <div className="text-sm text-muted-foreground">Conversion</div>
-                  </div>
-                  
-                  {psp.avgProcessingTime && (
-                    <div className="text-right">
-                      <div className="font-medium">{(psp.avgProcessingTime / 1000).toFixed(1)}s</div>
-                      <div className="text-sm text-muted-foreground">Temps moyen</div>
-                    </div>
-                  )}
+                    )
+                  })}
                 </div>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Configuration du routage */}
-      
+      {/* Row: Checkouts Chart + Approval Rate by PSP */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Checkouts Chart */}
+        {dailyCheckouts && dailyCheckouts.data.length > 0 && (
+          <Card className="glassmorphism glow-subtle">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-500/20">
+                  <Users className="h-4 w-4 text-blue-400" />
+                </div>
+                <CardTitle className="text-lg font-semibold">Checkouts</CardTitle>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-semibold">{dailyCheckouts.summary.totalCheckouts.toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">total</div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[220px]">
+                <ChartContainer config={checkoutsChartConfig} className="h-full w-full">
+                  <BarChart data={dailyCheckouts.data} margin={{ top: 5, right: 5, bottom: 0, left: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-white/10" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(d) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                      className="text-xs"
+                      stroke="hsl(var(--muted-foreground))"
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      className="text-xs"
+                      stroke="hsl(var(--muted-foreground))"
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <ChartTooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload
+                          return (
+                            <div className="glassmorphism border border-primary/20 rounded-lg p-3 shadow-lg">
+                              <p className="text-sm font-medium text-white">
+                                {new Date(data.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+                              </p>
+                              <div className="mt-1 space-y-0.5 text-xs">
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-blue-400">Checkouts</span>
+                                  <span className="font-semibold text-white">{data.checkoutsInitiated}</span>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-green-400">Paiements</span>
+                                  <span className="font-semibold text-white">{data.paymentSuccessful}</span>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        }
+                        return null
+                      }}
+                    />
+                    <Bar dataKey="checkoutsInitiated" fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.3} />
+                    <Bar dataKey="paymentSuccessful" fill="#0ABF53" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Approval Rate by PSP */}
+        {approvalRate && approvalRate.byPsp.length > 0 && (
+          <Card className="glassmorphism glow-subtle">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-500/20">
+                  <Target className="h-4 w-4 text-green-400" />
+                </div>
+                <CardTitle className="text-lg font-semibold">AR par PSP</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {approvalRate.byPsp
+                  .sort((a, b) => b.totalPayments - a.totalPayments)
+                  .map((psp) => {
+                    const arColor = psp.approvalRate >= 70 ? 'text-green-400' : psp.approvalRate >= 50 ? 'text-yellow-400' : 'text-red-400'
+                    const barColor = psp.approvalRate >= 70 ? '#0ABF53' : psp.approvalRate >= 50 ? '#F59E0B' : '#EF4444'
+                    return (
+                      <div key={psp.pspId}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{psp.pspName}</span>
+                            <span className="text-xs text-muted-foreground">{psp.totalPayments} tx</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <CheckCircle2 className="h-3 w-3 text-green-400" />
+                              {psp.successfulPayments}
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <XCircle className="h-3 w-3 text-red-400" />
+                              {psp.failedPayments}
+                            </div>
+                            <span className={`text-sm font-bold ${arColor}`}>
+                              {psp.approvalRate.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${psp.approvalRate}%`, backgroundColor: barColor }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   )
 }
