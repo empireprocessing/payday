@@ -3,10 +3,26 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { apiClient, useApiError, formatCurrency } from "@/lib/api-client"
-import type { OverviewMetrics, StoreMetric, PspMetric, TrendData, Store, PspWithUsage } from "@/lib/api-client"
-import type { ApprovalRatesResponse } from "@/lib/actions"
+import type { OverviewMetrics, StoreMetric, PspMetric, TrendData, Store, PspWithUsage, RunnerPayoutResult } from "@/lib/api-client"
+import type { ApprovalRatesResponse, IntegrationHealthResponse } from "@/lib/actions"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Label as FormLabel } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import {
     Table,
     TableBody,
@@ -16,7 +32,8 @@ import {
     TableRow,
 } from "@/components/ui/table"
 import {
-    XAxis, YAxis, Area, AreaChart, CartesianGrid, BarChart, Bar
+    XAxis, YAxis, Area, AreaChart, CartesianGrid, BarChart, Bar,
+    PieChart, Pie, Cell, Label
 } from 'recharts'
 import {
     ChartContainer,
@@ -29,7 +46,7 @@ import {
     CreditCard,
     DollarSign, Activity,
     MoreHorizontal, Target,
-    Zap, Gauge
+    Zap, Gauge, ChevronDown, Banknote
 } from "lucide-react"
 import { StoreMultiSelect } from "@/components/store-multi-select"
 import { PeriodSelector, type PeriodType, type PeriodRange } from "@/components/period-selector"
@@ -50,6 +67,13 @@ const PSP_COLORS = {
   adyen: "#0ABF53",
   default: "#8B5CF6"
 }
+
+// Palette étendue pour le donut (distinguer chaque PSP individuel)
+const DONUT_COLORS = [
+  "#635BFF", "#0ABF53", "#0066CC", "#00457C", "#F59E0B",
+  "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
+  "#6366F1", "#84CC16",
+]
 
 // Configuration du graphique
 const chartConfig = {
@@ -80,10 +104,19 @@ export function AnalyticsDashboard() {
   const [currentDays, setCurrentDays] = useState<number>(30)
   const [currentFromDate, setCurrentFromDate] = useState<Date | undefined>(undefined)
   const [currentToDate, setCurrentToDate] = useState<Date | undefined>(undefined)
+  const [integrationHealth, setIntegrationHealth] = useState<IntegrationHealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
+  const [storesExpanded, setStoresExpanded] = useState(false)
+  const [pspsExpanded, setPspsExpanded] = useState(false)
+  const [payoutOpen, setPayoutOpen] = useState(false)
+  const [payoutRunner, setPayoutRunner] = useState("")
+  const [payoutFrom, setPayoutFrom] = useState("")
+  const [payoutTo, setPayoutTo] = useState("")
+  const [payoutResult, setPayoutResult] = useState<RunnerPayoutResult | null>(null)
+  const [payoutLoading, setPayoutLoading] = useState(false)
+
   const { handleError } = useApiError()
 
   // Charger la liste des stores (une seule fois)
@@ -98,6 +131,42 @@ export function AnalyticsDashboard() {
     }
     loadStores()
   }, [])
+
+  // Runners uniques extraits des stores
+  const uniqueRunners = stores
+    .map(s => s.runner)
+    .filter((r): r is string => !!r && r.trim() !== "")
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .sort()
+
+  // Calcul du payout
+  const handlePayoutCalculate = async () => {
+    if (!payoutRunner || !payoutFrom || !payoutTo) return
+    setPayoutLoading(true)
+    setPayoutResult(null)
+    try {
+      const runnerStoreIds = stores
+        .filter(s => s.runner === payoutRunner)
+        .map(s => s.id)
+      const result = await apiClient.analytics.getRunnerPayout(runnerStoreIds, payoutFrom, payoutTo)
+      setPayoutResult(result)
+    } catch (err) {
+      console.error('Failed to calculate payout:', err)
+    } finally {
+      setPayoutLoading(false)
+    }
+  }
+
+  // Reset payout dialog on close
+  const handlePayoutOpenChange = (open: boolean) => {
+    setPayoutOpen(open)
+    if (!open) {
+      setPayoutRunner("")
+      setPayoutFrom("")
+      setPayoutTo("")
+      setPayoutResult(null)
+    }
+  }
 
   // Charger les données analytics (avec filtres)
   useEffect(() => {
@@ -149,13 +218,14 @@ export function AnalyticsDashboard() {
         setCurrentToDate(toDate)
         
         // Charger toutes les données en parallèle
-        const [overview, storesMetrics, psps, pspsUsage, trends, approvalRatesData] = await Promise.all([
+        const [overview, storesMetrics, psps, pspsUsage, trends, approvalRatesData, healthData] = await Promise.all([
           apiClient.analytics.getOverview(period, storeIdsParam, daysParam),
           apiClient.analytics.getStoreMetrics(period, storeIdsParam, daysParam),
           apiClient.analytics.getPspMetrics(period, storeIdsParam, daysParam),
           apiClient.analytics.getPspsWithUsage(storeIdsParam, period, daysParam),
           apiClient.analytics.getTrendData(period, days, storeIdsParam, fromDate, toDate),
           apiClient.analytics.getApprovalRates(storeIdsParam, daysParam, fromDate, toDate),
+          apiClient.analytics.getIntegrationHealth(),
         ])
 
         setOverviewMetrics(overview)
@@ -163,6 +233,7 @@ export function AnalyticsDashboard() {
         setPspMetrics(psps)
         setPspsWithUsage(pspsUsage)
         setApprovalRates(approvalRatesData)
+        setIntegrationHealth(healthData)
         // Trier les données de tendance par date pour un affichage correct
         const sortedTrends = [...trends].sort((a, b) => a.date.localeCompare(b.date))
         setTrendData(sortedTrends)
@@ -362,6 +433,71 @@ export function AnalyticsDashboard() {
 
       {/* Filtres - Design subtil */}
       <div className="flex flex-wrap items-center gap-4 justify-end">
+        {/* Payout Runner */}
+        <Dialog open={payoutOpen} onOpenChange={handlePayoutOpenChange}>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="glassmorphism border-primary/20 gap-2">
+              <Banknote className="h-4 w-4" />
+              Payout
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Calcul Payout Runner</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <FormLabel>Runner</FormLabel>
+                <Select value={payoutRunner} onValueChange={setPayoutRunner}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choisir un runner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueRunners.map(runner => (
+                      <SelectItem key={runner} value={runner}>{runner}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {payoutRunner && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <FormLabel>Du</FormLabel>
+                      <Input type="date" value={payoutFrom} onChange={e => setPayoutFrom(e.target.value)} className="[&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70" />
+                    </div>
+                    <div className="space-y-2">
+                      <FormLabel>Au</FormLabel>
+                      <Input type="date" value={payoutTo} onChange={e => setPayoutTo(e.target.value)} className="[&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70" />
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={handlePayoutCalculate}
+                    disabled={!payoutFrom || !payoutTo || payoutLoading}
+                  >
+                    {payoutLoading ? "Calcul..." : "Calculer"}
+                  </Button>
+                </>
+              )}
+              {payoutResult && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-white">{formatCurrency(payoutResult.totalRevenue)}</div>
+                    <div className="text-sm text-muted-foreground mt-1">Revenu total</div>
+                  </div>
+                  <div className="flex justify-center gap-6 text-sm text-muted-foreground pt-2 border-t border-white/10">
+                    <span>{payoutResult.totalPayments} paiement{payoutResult.totalPayments > 1 ? "s" : ""}</span>
+                    <span>{payoutResult.storeCount} boutique{payoutResult.storeCount > 1 ? "s" : ""}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <div className="flex-1" />
+
         {/* Filtre par stores */}
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground whitespace-nowrap">Boutiques:</span>
@@ -483,8 +619,8 @@ export function AnalyticsDashboard() {
               <div className="text-4xl font-bold">{overviewMetrics.totalPsps}</div>
               <div className="flex items-center gap-2 text-sm">
                 <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${
-                  overviewMetrics.growth.psps >= 0 
-                    ? 'bg-green-500/20 text-green-400' 
+                  overviewMetrics.growth.psps >= 0
+                    ? 'bg-green-500/20 text-green-400'
                     : 'bg-red-500/20 text-red-400'
                 }`}>
                   {overviewMetrics.growth.psps >= 0 ? (
@@ -496,6 +632,34 @@ export function AnalyticsDashboard() {
                 </div>
                 <span className="text-muted-foreground">Ce mois</span>
               </div>
+              {integrationHealth && (
+                <>
+                  <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-green-500 rounded-full transition-all"
+                      style={{ width: `${integrationHealth.connect.total > 0 ? (integrationHealth.connect.active / integrationHealth.connect.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="flex gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      {integrationHealth.connect.active} connectés
+                    </span>
+                    {integrationHealth.connect.pending > 0 && (
+                      <span className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+                        {integrationHealth.connect.pending} en attente
+                      </span>
+                    )}
+                    {integrationHealth.connect.disconnected > 0 && (
+                      <span className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                        {integrationHealth.connect.disconnected} non connectés
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -824,6 +988,161 @@ export function AnalyticsDashboard() {
             </CardContent>
           </Card>
 
+          {/* Répartition par Runner (Donut) */}
+          <Card className="glassmorphism glow-subtle hover:glow-primary transition-all duration-300">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-purple-500/20">
+                  <Zap className="h-4 w-4 text-purple-400" />
+                </div>
+                <CardTitle className="text-lg font-semibold">Répartition Runners</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const runnerMap = new Map<string, { revenue: number; totalOrders: number; successfulOrders: number; storeCount: number }>()
+
+                storeMetrics.forEach(sm => {
+                  const store = stores.find(s => s.id === sm.id)
+                  const runner = store?.runner?.trim() || 'Non assigné'
+                  const existing = runnerMap.get(runner) || { revenue: 0, totalOrders: 0, successfulOrders: 0, storeCount: 0 }
+                  existing.revenue += sm.totalRevenue
+                  existing.totalOrders += sm.totalOrders
+                  existing.successfulOrders += sm.successfulOrders
+                  existing.storeCount += 1
+                  runnerMap.set(runner, existing)
+                })
+
+                const donutData = Array.from(runnerMap.entries())
+                  .filter(([, data]) => data.revenue > 0)
+                  .sort((a, b) => b[1].revenue - a[1].revenue)
+                  .map(([name, data], i) => ({
+                    name,
+                    value: data.revenue,
+                    totalOrders: data.totalOrders,
+                    successfulOrders: data.successfulOrders,
+                    storeCount: data.storeCount,
+                    ar: data.totalOrders > 0 ? (data.successfulOrders / data.totalOrders * 100) : 0,
+                    color: DONUT_COLORS[i % DONUT_COLORS.length],
+                  }))
+
+                const totalRevenue = donutData.reduce((sum, d) => sum + d.value, 0)
+
+                if (donutData.length === 0) {
+                  return (
+                    <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
+                      Aucune donnée
+                    </div>
+                  )
+                }
+
+                return (
+                  <div className="flex items-center gap-6">
+                    {/* Donut */}
+                    <div className="shrink-0 w-[180px] h-[180px] relative">
+                      <PieChart width={180} height={180}>
+                        <Pie
+                          data={donutData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={80}
+                          paddingAngle={2}
+                          dataKey="value"
+                          stroke="none"
+                        >
+                          {donutData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                          <Label
+                            content={({ viewBox }) => {
+                              if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                                return (
+                                  <text
+                                    x={viewBox.cx}
+                                    y={viewBox.cy}
+                                    textAnchor="middle"
+                                    dominantBaseline="middle"
+                                  >
+                                    <tspan
+                                      x={viewBox.cx}
+                                      y={viewBox.cy}
+                                      className="fill-white text-sm font-bold"
+                                    >
+                                      {formatCurrency(totalRevenue)}
+                                    </tspan>
+                                  </text>
+                                )
+                              }
+                            }}
+                          />
+                        </Pie>
+                        <ChartTooltip
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              const percent = totalRevenue > 0 ? ((data.value / totalRevenue) * 100).toFixed(1) : '0';
+                              return (
+                                <div className="glassmorphism border border-primary/20 rounded-lg p-3 shadow-lg z-50">
+                                  <p className="text-sm font-medium text-white mb-2">{data.name}</p>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center justify-between gap-4">
+                                      <span className="text-xs text-muted-foreground">Revenus</span>
+                                      <span className="text-sm font-semibold text-white">{formatCurrency(data.value)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4">
+                                      <span className="text-xs text-muted-foreground">Part</span>
+                                      <span className="text-sm font-semibold text-white">{percent}%</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4">
+                                      <span className="text-xs text-muted-foreground">Boutiques</span>
+                                      <span className="text-sm font-semibold text-white">{data.storeCount}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4">
+                                      <span className="text-xs text-muted-foreground">AR</span>
+                                      <span className={`text-sm font-semibold ${data.ar >= 70 ? 'text-green-400' : data.ar >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                        {data.ar.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                      </PieChart>
+                    </div>
+                    {/* Liste runners */}
+                    <div className="flex-1 space-y-3 min-w-0">
+                      {donutData.map((entry, i) => {
+                        const percent = totalRevenue > 0 ? ((entry.value / totalRevenue) * 100).toFixed(1) : '0';
+                        return (
+                          <div key={i} className="flex items-center gap-3">
+                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-white truncate">{entry.name}</span>
+                                <span className="text-sm font-semibold text-white shrink-0 ml-2">{formatCurrency(entry.value)}</span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5">
+                                <span className="text-xs text-muted-foreground">{percent}%</span>
+                                <span className="text-xs text-muted-foreground">{entry.storeCount} boutique{entry.storeCount > 1 ? 's' : ''}</span>
+                                <span className={`text-xs font-medium ${entry.ar >= 70 ? 'text-green-400' : entry.ar >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                  AR {entry.ar.toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+            </CardContent>
+          </Card>
+
         </div>
       )}
 
@@ -840,7 +1159,7 @@ export function AnalyticsDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="rounded-xl overflow-hidden">
+            <div className={`rounded-xl overflow-hidden ${!storesExpanded && storeMetrics.length > 5 ? 'max-h-[280px] overflow-y-hidden' : ''}`}>
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-white/10">
@@ -860,7 +1179,7 @@ export function AnalyticsDashboard() {
                       {storeMetrics.map((store) => (
                         <Tooltip key={store.id}>
                           <TooltipTrigger asChild>
-                            <TableRow 
+                            <TableRow
                               className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
                               onClick={() => router.push(`/boutiques/${store.id}/analytics`)}
                             >
@@ -875,8 +1194,8 @@ export function AnalyticsDashboard() {
                               </TableCell>
                             </TableRow>
                           </TooltipTrigger>
-                          <TooltipContent 
-                            side="right" 
+                          <TooltipContent
+                            side="right"
                             className="glassmorphism border border-primary/20 rounded-lg p-3 shadow-lg max-w-xs bg-background/95 backdrop-blur-sm"
                             sideOffset={8}
                           >
@@ -921,6 +1240,14 @@ export function AnalyticsDashboard() {
                 </TableBody>
               </Table>
             </div>
+            {storeMetrics.length > 5 && (
+              <button
+                onClick={() => setStoresExpanded(!storesExpanded)}
+                className="w-full flex items-center justify-center pt-3 pb-1 text-muted-foreground hover:text-white transition-colors"
+              >
+                <ChevronDown className={`h-5 w-5 transition-transform ${storesExpanded ? 'rotate-180' : ''}`} />
+              </button>
+            )}
           </CardContent>
         </Card>
 
@@ -935,7 +1262,7 @@ export function AnalyticsDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="rounded-xl overflow-hidden">
+            <div className={`rounded-xl overflow-hidden ${!pspsExpanded && pspsWithUsage.length > 5 ? 'max-h-[280px] overflow-y-hidden' : ''}`}>
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-white/10">
@@ -954,16 +1281,14 @@ export function AnalyticsDashboard() {
                   ) : (
                     <TooltipProvider>
                       {pspsWithUsage.map((psp) => {
-                        // Calculer le pourcentage d'utilisation (en euros pour le calcul)
                         const usageEur = psp.usageBusinessDay / 100;
                         const capacityEur = psp.capacity ? psp.capacity / 100 : null;
                         const usagePercent = capacityEur ? (usageEur / capacityEur) * 100 : null;
-                        // Ne pas diviser ici, formatCurrency divise déjà par 100
-                        
+
                         return (
                           <Tooltip key={psp.id}>
                             <TooltipTrigger asChild>
-                              <TableRow 
+                              <TableRow
                                 className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
                                 onClick={() => router.push(`/analytics/psp/${psp.id}`)}
                               >
@@ -990,8 +1315,8 @@ export function AnalyticsDashboard() {
                                 </TableCell>
                               </TableRow>
                             </TooltipTrigger>
-                            <TooltipContent 
-                              side="right" 
+                            <TooltipContent
+                              side="right"
                               className="glassmorphism border border-primary/20 rounded-lg p-3 shadow-lg max-w-xs bg-background/95 backdrop-blur-sm"
                               sideOffset={8}
                             >
@@ -1050,6 +1375,14 @@ export function AnalyticsDashboard() {
                 </TableBody>
               </Table>
             </div>
+            {pspsWithUsage.length > 5 && (
+              <button
+                onClick={() => setPspsExpanded(!pspsExpanded)}
+                className="w-full flex items-center justify-center pt-3 pb-1 text-muted-foreground hover:text-white transition-colors"
+              >
+                <ChevronDown className={`h-5 w-5 transition-transform ${pspsExpanded ? 'rotate-180' : ''}`} />
+              </button>
+            )}
           </CardContent>
         </Card>
       </div>
