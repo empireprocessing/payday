@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo, Fragment } from "react"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ChevronLeft, ChevronRight, Banknote, RefreshCw } from "lucide-react"
+import { ChevronLeft, ChevronRight, Banknote, RefreshCw, ChevronDown, User } from "lucide-react"
 import type { PaymentRecord, PaginatedPayments } from "@/lib/types"
 import type { Store, PSPWithStoreCount } from "@/lib/types"
 import { getAllPayments, getAllStores, getAllPsps } from "@/lib/actions"
@@ -54,7 +54,7 @@ function formatDate(dateStr: string) {
 function SkeletonRow() {
   return (
     <TableRow className="border-b border-white/5">
-      {Array.from({ length: 6 }).map((_, i) => (
+      {Array.from({ length: 7 }).map((_, i) => (
         <TableCell key={i}>
           <div className="h-4 bg-white/10 rounded animate-pulse w-24" />
         </TableCell>
@@ -69,6 +69,7 @@ export function PaymentsList() {
   const [page, setPage] = useState(1)
   const [limit] = useState(50)
   const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const [stores, setStores] = useState<Store[]>([])
   const [psps, setPsps] = useState<PSPWithStoreCount[]>([])
@@ -76,6 +77,33 @@ export function PaymentsList() {
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [filterStore, setFilterStore] = useState<string>("all")
   const [filterPsp, setFilterPsp] = useState<string>("all")
+  const [filterRunner, setFilterRunner] = useState<string>("all")
+
+  // Runners uniques extraits des stores (se met à jour quand les stores changent)
+  const uniqueRunners = useMemo(() => {
+    const runners = stores
+      .map(s => s.runner)
+      .filter((r): r is string => !!r && r.trim() !== "")
+    return [...new Set(runners)].sort()
+  }, [stores])
+
+  // Stores filtrés par runner sélectionné
+  const filteredStores = useMemo(() => {
+    if (filterRunner === "all") return stores
+    return stores.filter(s => s.runner === filterRunner)
+  }, [stores, filterRunner])
+
+  // Store IDs correspondant au runner sélectionné
+  const runnerStoreIds = useMemo(() => {
+    if (filterRunner === "all") return null
+    return stores.filter(s => s.runner === filterRunner).map(s => s.id)
+  }, [stores, filterRunner])
+
+  // Paiements filtrés par runner côté client
+  const displayedPayments = useMemo(() => {
+    if (!runnerStoreIds) return payments
+    return payments.filter(p => runnerStoreIds.includes(p.store?.id))
+  }, [payments, runnerStoreIds])
 
   const fetchPayments = useCallback(async () => {
     setLoading(true)
@@ -116,24 +144,49 @@ export function PaymentsList() {
     fetchPayments()
   }, [fetchPayments])
 
+  // Reset store filter si le store sélectionné n'appartient pas au runner
+  useEffect(() => {
+    if (filterRunner !== "all" && filterStore !== "all") {
+      const store = stores.find(s => s.id === filterStore)
+      if (store && store.runner !== filterRunner) {
+        setFilterStore("all")
+      }
+    }
+  }, [filterRunner, filterStore, stores])
+
   // Reset page when filters change
   useEffect(() => {
     setPage(1)
-  }, [filterStatus, filterStore, filterPsp])
+  }, [filterStatus, filterStore, filterPsp, filterRunner])
 
+  const displayedTotal = runnerStoreIds ? displayedPayments.length : total
   const totalPages = Math.ceil(total / limit)
 
   return (
     <Card className="glassmorphism-strong p-6 glow-subtle">
       {/* Filters */}
       <div className="flex flex-wrap gap-4 mb-6">
+        <Select value={filterRunner} onValueChange={setFilterRunner}>
+          <SelectTrigger className="w-[200px] glassmorphism">
+            <SelectValue placeholder="Runner" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tous les runners</SelectItem>
+            {uniqueRunners.map((runner) => (
+              <SelectItem key={runner} value={runner}>
+                {runner}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <Select value={filterStore} onValueChange={setFilterStore}>
           <SelectTrigger className="w-[200px] glassmorphism">
             <SelectValue placeholder="Store" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous les stores</SelectItem>
-            {stores.map((store) => (
+            {filteredStores.map((store) => (
               <SelectItem key={store.id} value={store.id}>
                 {store.name}
               </SelectItem>
@@ -190,61 +243,100 @@ export function PaymentsList() {
               <TableHead className="text-foreground font-semibold">Statut</TableHead>
               <TableHead className="text-foreground font-semibold">Date</TableHead>
               <TableHead className="text-foreground font-semibold">Fallback</TableHead>
+              <TableHead className="w-8"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
-            ) : payments.length === 0 ? (
+            ) : displayedPayments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                   <Banknote className="h-12 w-12 mx-auto mb-4 opacity-30" />
                   Aucun paiement trouvé
                 </TableCell>
               </TableRow>
             ) : (
-              payments.map((payment) => (
-                <TableRow key={payment.id} className="border-b border-white/5 hover:bg-white/5">
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{payment.store?.name ?? "-"}</div>
-                      <div className="text-xs text-muted-foreground">{payment.store?.domain ?? ""}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{payment.psp?.name ?? "-"}</span>
-                      {payment.psp?.pspType && (
-                        <Badge variant="secondary" className="text-xs">
-                          {payment.psp.pspType}
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="font-mono font-medium">
-                      {formatAmount(payment.amount, payment.currency)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={`text-xs ${STATUS_STYLES[payment.status] || ""}`}>
-                      {payment.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-muted-foreground">
-                      {formatDate(payment.createdAt)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {payment.isFallback && (
-                      <Badge variant="outline" className="text-xs border-orange-500/50 text-orange-400">
-                        Fallback
-                      </Badge>
+              displayedPayments.map((payment) => {
+                const isExpanded = expandedId === payment.id
+                return (
+                  <Fragment key={payment.id}>
+                    <TableRow
+                      className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
+                      onClick={() => setExpandedId(isExpanded ? null : payment.id)}
+                    >
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{payment.store?.name ?? "-"}</div>
+                          <div className="text-xs text-muted-foreground">{payment.store?.domain ?? ""}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{payment.psp?.name ?? "-"}</span>
+                          {payment.psp?.pspType && (
+                            <Badge variant="secondary" className="text-xs">
+                              {payment.psp.pspType}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-mono font-medium">
+                          {formatAmount(payment.amount, payment.currency)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <Badge className={`text-xs ${STATUS_STYLES[payment.status] || ""}`}>
+                            {payment.status}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {formatDate(payment.createdAt)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {payment.isFallback && (
+                          <Badge variant="outline" className="text-xs border-orange-500/50 text-orange-400">
+                            Fallback
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow key={`${payment.id}-details`} className="bg-muted/10 border-b border-white/5">
+                        <TableCell colSpan={7}>
+                          <div className="py-4 px-6 flex items-start gap-16 text-sm">
+                            <div className="flex items-center gap-3">
+                              <User className="h-5 w-5 text-muted-foreground" />
+                              <div>
+                                <span className="text-muted-foreground text-sm">Runner</span>
+                                <span className="block font-semibold text-sm mt-0.5">
+                                  {stores.find(s => s.id === payment.store?.id)?.runner || "Non assigné"}
+                                </span>
+                              </div>
+                            </div>
+                            {payment.failureReason && (
+                              <div className="min-w-0 flex-1">
+                                <span className="text-muted-foreground text-sm">Raison échec</span>
+                                <span className="block text-sm text-red-400 mt-0.5 break-words whitespace-normal">
+                                  {payment.failureReason}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </TableCell>
-                </TableRow>
-              ))
+                  </Fragment>
+                )
+              })
             )}
           </TableBody>
         </Table>
@@ -254,7 +346,7 @@ export function PaymentsList() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/10">
           <span className="text-sm text-muted-foreground">
-            {total} paiement{total > 1 ? "s" : ""} — Page {page}/{totalPages}
+            {displayedTotal} paiement{displayedTotal > 1 ? "s" : ""} — Page {page}/{totalPages}
           </span>
           <div className="flex gap-2">
             <Button
